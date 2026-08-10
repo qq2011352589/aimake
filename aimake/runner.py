@@ -56,13 +56,19 @@ def run_nodes(
     engine: EngineSpec,
     concurrency: int = 4,
     retries: int = 2,
+    progress: bool = True,
 ) -> list[GenResult]:
-    """并行执行节点生成（并发上限 + 超时 + 重试 + 失败不阻塞）。"""
+    """并行执行节点生成（并发上限 + 超时 + 重试 + 失败不阻塞）。
+
+    progress=True 时打印每节点进度（开始/完成/失败 + 耗时，flush 即时输出）。
+    """
     results: list[GenResult] = []
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = {}
         for rel, prompt, cwd in plan:
-            futures[pool.submit(_run_with_retry, engine, prompt, cwd, retries)] = rel
+            futures[pool.submit(
+                _run_with_retry, engine, prompt, cwd, retries, rel, progress
+            )] = rel
         for fut in as_completed(futures):
             rel = futures[fut]
             try:
@@ -75,16 +81,27 @@ def run_nodes(
 
 
 def _run_with_retry(
-    engine: EngineSpec, prompt: str, cwd: Path, retries: int
+    engine: EngineSpec, prompt: str, cwd: Path, retries: int,
+    rel: str = "", progress: bool = True,
 ) -> tuple[str, int]:
+    import time
     attempts = 0
     last_err: Exception | None = None
     while attempts <= retries:
         attempts += 1
+        label = rel or "根"
+        if progress:
+            print(f"  [生成] {label} 开始（尝试 {attempts}/{retries + 1}）…", flush=True)
+        t0 = time.monotonic()
         try:
-            return run_engine(engine, prompt, cwd), attempts
+            out = run_engine(engine, prompt, cwd)
+            if progress:
+                print(f"  [完成] {label}（{time.monotonic() - t0:.1f}s）", flush=True)
+            return out, attempts
         except Exception as exc:
             last_err = exc
+            if progress:
+                print(f"  [失败] {label}（{time.monotonic() - t0:.1f}s）：{exc}", flush=True)
     assert last_err is not None
     raise last_err
 

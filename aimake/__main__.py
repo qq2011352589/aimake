@@ -106,7 +106,9 @@ def _generate_waves(waves: list, node_plan: dict, engine, args) -> tuple[list, l
     """执行波浪生成并写产物。返回 (成功列表, 失败列表)。"""
     ok: list = []
     failed: list = []
+    total_waves = len(waves)
     for wi, wave in enumerate(waves, 1):
+        print(f"  层 {wi}/{total_waves}：{len(wave)} 个节点并行…", flush=True)
         plan = [(n.rel, node_plan[n.rel][0], node_plan[n.rel][1]) for n in wave]
         gen = run_nodes(
             [(rel, p, c) for rel, p, c in plan],
