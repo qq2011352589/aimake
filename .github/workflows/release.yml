@@ -33,7 +33,8 @@ jobs:
           python-version: "3.14"
 
       - name: 安装 Nuitka
-        run: pip install nuitka zstandard ordered-set
+        run: pip install nuitka zstandard ordered-set dependency-walker
+        # dependency-walker：Windows onefile 需要（其他平台无害）
 
       - name: 编译（Nuitka onefile）
         env:
@@ -69,6 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: 注册 qemu binfmt（arm64 容器可执行）
+        uses: docker/setup-qemu-action@v3
 
       - name: qemu 容器内编译（linux/arm64）
         run: |
