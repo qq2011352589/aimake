@@ -16,7 +16,6 @@ from .skeleton import create_skeleton, mirror_prefix, resolve_knowledge_root
 from .walk import walk_project
 
 _PLANNED: tuple[tuple[str, str], ...] = (
-    ("tree", "知识树总览（规划中）"),
     ("ask", "QA 问答（规划中）"),
     ("scaffold", "从描述生成项目（规划中）"),
 )
@@ -351,6 +350,73 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _section_text(text: str, header: str) -> list[str]:
+    """取 agents.md 某 ## 小节内容行。"""
+    out: list[str] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line[3:].strip().upper() == header.upper()
+            continue
+        if in_section and line.strip():
+            out.append(line.strip())
+    return out
+
+
+def cmd_tree(args: argparse.Namespace) -> int:
+    """tree：知识树总览 = 全局索引物化（目录名 + 一句话摘要 + 过期标记）。"""
+    cwd = Path.cwd()
+    target = Path(args.target).resolve() if args.target else cwd
+    if not target.is_dir():
+        print(f"错误：不是目录：{target}", file=sys.stderr)
+        return 1
+
+    knowledge_root = resolve_knowledge_root(cwd)
+    prefix = mirror_prefix(knowledge_root, target, cwd)
+    if not (prefix / "agents.md").is_file():
+        print(f"知识根尚未初始化：{prefix}")
+        print(f"提示：先运行 `aimake init {args.target or ''}`")
+        return 0
+
+    result = walk_project(target)
+    graph = build_knowledge_graph(result)
+    heights = _compute_heights(graph.topo_order())
+
+    print(f"# 知识树总览 — {target.name}（{len(graph.nodes)} 节点）")
+
+    def render(node, indent: int) -> None:
+        rel = node.rel
+        md = prefix / rel / "agents.md" if rel else prefix / "agents.md"
+        ov = extract_overview(md.read_text(encoding="utf-8")) if md.is_file() else "（未生成）"
+        name = target.name if not rel else node.path.name
+        warnings: list[str] = []
+        info: list[str] = []
+        if not md.is_file():
+            warnings.append("未生成")
+        else:
+            meta = prefix / rel / ".meta" if rel else prefix / ".meta"
+            if is_stale(node.path, result.files.get(node.path, []), meta):
+                warnings.append("过期")
+        if node.dep_candidates:
+            info.append("依赖: " + ",".join(node.dep_candidates))
+        warn = f" ⚠️[{'、'.join(warnings)}]" if warnings else ""
+        deps = f" [{', '.join(info)}]" if info else ""
+        print(f"{'  ' * indent}{name}/ — {ov}{warn}{deps}")
+        for child in node.children:
+            render(child, indent + 1)
+
+    render(graph.root, 0)
+
+    # 全局捷径表（根 agents.md 的 WHERE TO LOOK = 全局索引物化）
+    root_text = (prefix / "agents.md").read_text(encoding="utf-8")
+    shortcuts = _section_text(root_text, "WHERE TO LOOK")
+    if shortcuts:
+        print("\n== 全局捷径表（根 WHERE TO LOOK）==")
+        for line in shortcuts:
+            print(f"  {line.lstrip('-').strip()}")
+    return 0
+
+
 def cmd_not_implemented(name: str) -> int:
     print(f"{name}：尚未实现（规划中，见 plan.md / task.md）")
     return 1
@@ -386,6 +452,10 @@ def main(argv: list[str] | None = None) -> int:
     p_status = sub.add_parser("status", help="过期清单 / 待处理反馈（只读）")
     p_status.add_argument("target", nargs="?", default=None, help="扫描目标项目（默认当前目录）")
     p_status.set_defaults(func=cmd_status)
+
+    p_tree = sub.add_parser("tree", help="知识树总览（全局索引物化）")
+    p_tree.add_argument("target", nargs="?", default=None, help="扫描目标项目（默认当前目录）")
+    p_tree.set_defaults(func=cmd_tree)
 
     for name, help_text in _PLANNED:
         p = sub.add_parser(name, help=help_text)
