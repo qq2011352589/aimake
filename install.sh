@@ -41,7 +41,7 @@ if [ -n "$PREFIX" ] && [ -d "$PREFIX/bin" ]; then
   fi
 fi
 
-# ---------- 下载 ----------
+# ---------- 下载（双路径 + 断点续传） ----------
 if [ "$PLAT" = "windows" ]; then
   ASSET="aimake-${PLAT}-${ABI}.exe"
 else
@@ -49,8 +49,10 @@ else
 fi
 if [ "$VERSION" = "latest" ]; then
   URL="${BASE_URL}/latest/download/${ASSET}"
+  API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 else
   URL="${BASE_URL}/download/${VERSION}/${ASSET}"
+  API_URL="https://api.github.com/repos/${REPO}/releases/tags/${VERSION}"
 fi
 
 DEST="${AIMAKE_INSTALL_DIR:-}"
@@ -61,7 +63,36 @@ mkdir -p "$DEST"
 
 echo "→ 平台：${PLAT}-${ABI}"
 echo "→ 下载：${URL}"
-curl -fsSL "$URL" -o "$DEST/aimake.bin"
+
+# 断点续传下载函数：-C - 支持中断恢复；--retry 处理瞬断
+# 注意：-f 失败时不保留零字节占位；中断的断点文件保留供续传
+dl() {
+  curl -fL -C - --connect-timeout 15 --retry 3 --retry-delay 2 \
+    --max-time 1800 -o "$DEST/aimake.bin" "$@"
+}
+
+# 路径 1：直连 release 下载（github.com → 302 → 存储 CDN）
+if dl "$URL"; then
+  : # 成功
+else
+  echo "→ 直连失败（网络受限），改用 GitHub API 下载…"
+  # 路径 2：api.github.com（与直连不同的网络路径，部分受限网络可通）
+  # 一次请求拿 Release JSON → awk 匹配资产名取 id（id 在 name 之前）
+  RELEASE_JSON=$(curl -fsSL --connect-timeout 15 "$API_URL" 2>/dev/null) || true
+  ASSET_ID=$(printf '%s\n' "$RELEASE_JSON" \
+    | awk -v asset="$ASSET" '
+        /"id":/ { id=$2; gsub(/[,"]/,"",id) }
+        /"name":/ { name=$0; sub(/.*"name": *"/,"",name); sub(/".*/,"",name);
+                    if (name==asset) { print id; exit } }')
+  if [ -z "$ASSET_ID" ]; then
+    echo "错误：Release 中找不到资产 $ASSET（API 也不可达）" >&2
+    exit 1
+  fi
+  dl "https://api.github.com/repos/${REPO}/releases/assets/${ASSET_ID}" \
+    -H "Accept: application/octet-stream" || {
+      echo "错误：API 下载也失败" >&2; exit 1; }
+fi
+
 chmod +x "$DEST/aimake.bin"
 
 # Termux：无静态 libpython → bionic 产物依赖 libpython3.14.so
