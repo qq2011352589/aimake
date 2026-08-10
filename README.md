@@ -1,14 +1,14 @@
 # aimake（AI make）
 
-> 基于 `codex exec` / `opencode run` 的分层 AI 知识库生成器——为任意项目 A 递归生成 `.aimake/agents.md` 分层知识框架与知识链路。
+> 基于 `codex exec` / `opencode run` 的分层 AI 知识库生成器——为任意项目在知识根（运行目录 `.aimake/`）递归生成镜像式的 agents.md 分层知识树与知识链路。
 
-**状态：规划完成，待实施**（详见 [plan.md](plan.md)）
+**状态：M1 实施中（`scan` 已可用）**（详见 [plan.md](plan.md) / [task.md](task.md)）
 
 ## 它解决什么问题
 
 AI 每次进入一个项目，都要重新读代码、重新理解结构。aimake 一次性为项目生成一棵**分层知识树**：
 
-- 每个目录一个 `.aimake/agents.md`，回答「这个目录里有什么、去哪找答案」
+- 知识根 `.aimake/` 按目录结构**镜像**知识树——每个目录一个知识节点（agents.md），回答「这个目录里有什么、去哪找答案」；目标项目**零侵入**（不在项目里放任何 .aimake）
 - 知识边界严格：父级只看子级摘要，细节按需下钻——**上下文严格线性，不随项目规模爆炸**
 - 产物是**导航图**不是答案本：承诺「可达」，不承诺「已知」——链路末端永远指向真实源码
 
@@ -16,8 +16,9 @@ AI 每次进入一个项目，都要重新读代码、重新理解结构。aimak
 
 ### 知识模型
 
+- **知识根模型**：知识根 = 运行目录的 `.aimake/`（在父目录运行即父级知识工作区）；目标项目按目录路径镜像（`.aimake/<项目名>/<目录>/agents.md`）；目标项目零 `.aimake`（可选 `.aimake-link` 指针文件）
 - **三类边**：树边（目录层级，管"有什么"）、依赖边（跨目录契约，只存指针+摘要，管"需要知道什么"）、捷径边（问题→节点语义路由，管"模糊问题直达哪里"）
-- **owner 语义**：每个目录的 agents.md 是权威管理者——知识所有权、边界守卫、委托授权；它是导航员不是围墙
+- **owner 语义**：每个目录的知识节点是权威管理者——知识所有权、边界守卫、委托授权；它是导航员不是围墙
 - **统一 schema**：OVERVIEW / SUB-KNOWLEDGE / DEPENDS / FILES / WHERE TO LOOK / QA / KEY SYMBOLS / COMMANDS / ANTI-PATTERNS / EXTERNAL（子级可被父级机器解析聚合）
 
 ### 更新机制（三通道，全部显式触发）
@@ -38,7 +39,8 @@ AI 每次进入一个项目，都要重新读代码、重新理解结构。aimak
 ## CLI 预览
 
 ```bash
-python -m aimake init              # 当前目录生成 .aimake 全树（自底向上）
+python -m aimake scan [路径]       # 扫描可见目录树（ignore 规则生效）
+python -m aimake init [目标]       # 知识根生成目标项目镜像知识树（自底向上）
 python -m aimake update [路径]      # 指纹驱动重生成受影响目录链
 python -m aimake update --feedback # 反馈驱动处理消费侧纠错队列
 python -m aimake status            # 过期清单 / 待处理反馈 / 符号自检
@@ -57,9 +59,10 @@ python -m aimake scaffold "一句话"  # 从描述生成项目骨架 + 自动 in
 
 ```
 aimake/
+├── aimake/     # Python 包（CLI 入口：__main__ / config / walk）
 ├── AGENTS.md   # 项目知识库（核心设计沉淀）
 ├── plan.md     # 项目计划（里程碑/阶段/风险）
-├── task.md     # 任务清单（模板）
+├── task.md     # 任务清单
 └── README.md   # 本文档
 ```
 
