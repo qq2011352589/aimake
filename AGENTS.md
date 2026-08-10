@@ -129,7 +129,14 @@ aimake/
 ├── aimake/                           # Python 包（CLI 入口）
 │   ├── __main__.py                   # CLI：scan 已实现，其余规划中
 │   ├── config.py                     # ignore 规则（默认 6 项 + .aimakeignore + fnmatch）
-│   └── walk.py                       # 目录遍历（followlinks=False + 剪枝）
+│   ├── walk.py                       # 目录遍历（followlinks=False + 剪枝）
+│   ├── imports.py                    # import 静态扫描（多语言候选名单）
+│   ├── graph.py                      # 三类边知识图（树边 + 依赖候选 + 拓扑序）
+│   ├── meta.py                       # .meta 指纹（sha256 + 过期判定）
+│   ├── skeleton.py                   # 知识根镜像骨架创建
+│   ├── prompt.py                     # 生成提示词模板（全量/轻量两档 + 内容分级）
+│   ├── engine.py                     # 生成引擎抽象（通用接口 + codex/opencode 预置 + 配置）
+│   └── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock）
 ├── .aimake/                          # 自举：aimake 自身的知识（init 产物，待生成）
 ├── AGENTS.md                         # 本文档
 ├── plan.md                           # 项目计划
@@ -147,6 +154,13 @@ aimake/
 | CLI 入口 | aimake/__main__.py | 命令分发（scan 已实现） |
 | ignore 规则 | aimake/config.py | 默认 6 项 + .aimakeignore + fnmatch 通配 |
 | 目录遍历 | aimake/walk.py | os.walk + 剪枝 + 可见目录树 |
+| import 扫描 | aimake/imports.py | 多语言 import 候选名单（纯目录名） |
+| 知识图 | aimake/graph.py | 树边 + 依赖候选 + 后序拓扑序 |
+| 指纹 | aimake/meta.py | .meta 写入/读取/过期判定 |
+| 镜像骨架 | aimake/skeleton.py | 知识根镜像目录 + .meta 落位 |
+| 提示词模板 | aimake/prompt.py | 十小节全量档 + SUMMARY 轻量档 + 内容分级 + OVERVIEW 提取 |
+| 引擎抽象 | aimake/engine.py | EngineSpec 通用接口 + codex/opencode 预置 + aimake.json 配置 |
+| 执行器 | aimake/runner.py | 并发池 + 超时 + 重试 + 失败标记 + mock 引擎 |
 
 ## CODE MAP
 
@@ -158,7 +172,15 @@ aimake/
 | is_ignored | 函数 | aimake/config.py | 1 | 路径段精确或通配匹配判定 |
 | walk_project | 函数 | aimake/walk.py | 1 | 遍历可见目录树（剪枝被忽略目录） |
 | WalkResult | 类 | aimake/walk.py | 1 | 遍历结果：目录树 + 每目录文件清单 |
-| main / cmd_scan | 函数 | aimake/__main__.py | 0 | CLI 入口分发 / scan 命令 |
+| scan_imports / build_dep_candidates | 函数 | aimake/imports.py | 1 | 多语言 import 提取 / 候选名单构建 |
+| GraphNode / KnowledgeGraph | 类 | aimake/graph.py | 1 | 知识图节点 / 图（topo_order 后序） |
+| build_knowledge_graph | 函数 | aimake/graph.py | 1 | 遍历结果 → 知识图 |
+| file_hash / write_meta / is_stale | 函数 | aimake/meta.py | 1 | 指纹计算 / 写入 / 过期判定 |
+| create_skeleton / mirror_prefix | 函数 | aimake/skeleton.py | 1 | 镜像骨架 / 镜像前缀 |
+| decide_tier / build_prompt / extract_overview | 函数 | aimake/prompt.py | 1 | 内容分级 / 提示词构造 / OVERVIEW 提取 |
+| EngineSpec / load_engine_config | 类/函数 | aimake/engine.py | 1 | 引擎规格 / 配置加载（预置 codex/opencode） |
+| run_nodes / run_engine | 函数 | aimake/runner.py | 1 | 并行生成 / 单次引擎调用（mock 支持） |
+| main / cmd_scan / cmd_init | 函数 | aimake/__main__.py | 0 | CLI 分发 / scan / init（骨架+dry-run） |
 
 ## CONVENTIONS（提议，待定）
 
