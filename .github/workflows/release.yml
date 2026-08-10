@@ -78,7 +78,7 @@ jobs:
         run: |
           docker run --platform linux/arm64 --rm -v "$PWD":/work -w /work \
             python:3.14-slim bash -c \
-            "apt-get update -qq && apt-get install -y -qq patchelf && \
+            "apt-get update -qq && apt-get install -y -qq patchelf binutils && \
              pip install --quiet nuitka zstandard ordered-set && \
              python -m nuitka --standalone --onefile --assume-yes-for-downloads main.py && \
              mv main.bin aimake-linux-aarch64"
