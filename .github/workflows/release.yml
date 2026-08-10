@@ -56,13 +56,6 @@ jobs:
           path: ${{ matrix.asset }}
           if-no-files-found: error
 
-      - name: 发布 Release 附件
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ matrix.asset }}
-          generate_release_notes: true
-
   # Termux 三架构：termux/termux-docker 容器（bionic libc）内原生编译
   # 注意：产物为 bionic 版，供 Android/Termux 使用（与上方 glibc 版不可互换）
   # Termux 包管理器禁 root → 容器内以 system 用户跑 pkg/pip（termux-docker 默认 entrypoint 已降权）
@@ -109,9 +102,25 @@ jobs:
           path: aimake-termux-${{ matrix.arch }}
           if-no-files-found: error
 
-      - name: 发布 Release 附件
-        if: startsWith(github.ref, 'refs/tags/')
+  # 统一发布：全部资产构建完成后一次性创建 Release（无"资产未齐"窗口期）
+  publish:
+    name: 发布 Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-native, build-termux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: 确认全部资产已就绪
+        run: |
+          ls -la assets/
+          [ "$(ls assets/ | wc -l)" -ge 6 ] || { echo "资产不足 6 个，中止发布"; exit 1; }
+
+      - name: 创建 Release（一次性附带全部资产）
         uses: softprops/action-gh-release@v2
         with:
-          files: aimake-termux-${{ matrix.arch }}
+          files: assets/*
           generate_release_notes: true
