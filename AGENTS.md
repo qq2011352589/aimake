@@ -190,11 +190,11 @@ aimake/
 | _symbol_selfcheck / cmd_maintain / cmd_scaffold | 函数 | aimake/__main__.py | 1 | 符号自检（表格兼容）/ 一键维护 / 项目生成 |
 | main / cmd_scan / cmd_init | 函数 | aimake/__main__.py | 0 | CLI 分发 / scan / init（骨架+dry-run） |
 
-## CONVENTIONS（提议，待定）
+## CONVENTIONS（已定）
 
 - CLI 子命令（全部已实现）：`scan` / `init` / `update(--feedback)` / `status` / `tree` / `ask` / `scaffold` / `maintain`。
 - ignore 规则集中管理，风格参考 `.gitignore`。
-- 目录遍历与子进程调用只用 Python 标准库，零第三方依赖（提议）。
+- 目录遍历与子进程调用只用 Python 标准库，零第三方依赖（已定）。
 - **产物语言与格式（已定）**：生成的 agents.md 内容一律**中文**；知识文件后缀一律 `.md`。schema 小节标题为协议键（当前为英文键，供父级机器解析聚合），键名如需中文化必须全局一致迁移，防止解析断裂。
 - **代码语言约定（已定）**：代码说英文，项目说中文——标识符/模块名用英文（生态约定），注释/文档字符串/CLI 输出/错误消息/提示词模板一律中文。分工：**AI 维护源码，人维护 md**（md 是人机接口层）。
 - 依赖发现：静态扫描只作候选名单，DEPENDS 由模型生成时确认。

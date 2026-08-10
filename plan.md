@@ -34,50 +34,50 @@
 
 ### 阶段 0：准备
 - [x] 确定技术栈（Python 3 + Nuitka，已定）
-- [ ] 初始化项目结构与入口（aimake.py / 包结构）
-- [ ] 验证 Termux 上 codex exec / opencode run 可用
+- [x] 初始化项目结构与入口（aimake.py / 包结构）
+- [x] 验证 Termux 上 codex exec / opencode run 可用
 
 ### 阶段 1：生成器（M1）
-- [ ] 目录遍历 + ignore 清单（排除 .git/node_modules/__pycache__/dist/build/.aimake）
-- [ ] 构建三类边：目录树（树边）+ 依赖候选名单（依赖边）+ 捷径表来源分析（语义路由）
-- [ ] 知识根镜像骨架创建（运行目录 `.aimake/` + 目标镜像 + `.meta` 指纹格式）
-- [ ] 生成提示词模板（统一 schema：OVERVIEW/SUB-KNOWLEDGE/DEPENDS/FILES/WHERE TO LOOK/QA/KEY SYMBOLS/COMMANDS/ANTI-PATTERNS/EXTERNAL）
-- [ ] 叶子节点并行调用 codex exec（并发上限 + 超时）
-- [ ] 父级聚合生成（注入子级摘要 + 依赖候选名单）
-- [ ] 根节点生成（聚合 + 跨目录契约 + 全局捷径路由表）
-- [ ] 两阶段生成（依赖缺失标记 → 快照补一轮）
-- [ ] 内容分级（低复杂度目录轻量 agents.md，高复杂度全 schema）+ 同级差异化摘要
-- [ ] 子树分批 init（`aimake init <子路径>`）+ 运行位置/扫描目标语义
-- [ ] `.aimake-link` 指针文件（可选：消费发现协议）
-- [ ] 自举：aimake 在自己的仓库上跑 init
+- [x] 目录遍历 + ignore 清单（排除 .git/node_modules/__pycache__/dist/build/.aimake）
+- [x] 构建三类边：目录树（树边）+ 依赖候选名单（依赖边）+ 捷径表来源分析（语义路由）
+- [x] 知识根镜像骨架创建（运行目录 `.aimake/` + 目标镜像 + `.meta` 指纹格式）
+- [x] 生成提示词模板（统一 schema：OVERVIEW/SUB-KNOWLEDGE/DEPENDS/FILES/WHERE TO LOOK/QA/KEY SYMBOLS/COMMANDS/ANTI-PATTERNS/EXTERNAL）
+- [x] 叶子节点并行调用 codex exec（并发上限 + 超时）
+- [x] 父级聚合生成（注入子级摘要 + 依赖候选名单）
+- [x] 根节点生成（聚合 + 跨目录契约 + 全局捷径路由表）
+- [x] 两阶段生成（依赖缺失标记 → 快照补一轮）
+- [x] 内容分级（低复杂度目录轻量 agents.md，高复杂度全 schema）+ 同级差异化摘要
+- [x] 子树分批 init（`aimake init <子路径>`）+ 运行位置/扫描目标语义
+- [x] `.aimake-link` 指针文件（可选：消费发现协议）
+- [x] 自举：aimake 在自己的仓库上跑 init
 
 ### 阶段 2：消费与更新（M2）
-- [ ] `update [路径]`：指纹对比 → 受影响子图（本目录 + 祖先链 + DEPENDS 消费者）
-- [ ] `status`：过期清单 + 待处理反馈计数
-- [ ] `tree`：知识树总览输出（全局索引）
-- [ ] `ask`：QA 条目确定性匹配 + 来源标注
-- [ ] 符号自检（通道 3）：KEY SYMBOLS / QA 证据指针 vs 源码 grep 比对
+- [x] `update [路径]`：指纹对比 → 受影响子图（本目录 + 祖先链 + DEPENDS 消费者）
+- [x] `status`：过期清单 + 待处理反馈计数
+- [x] `tree`：知识树总览输出（全局索引）
+- [x] `ask`：QA 条目确定性匹配 + 来源标注
+- [x] 符号自检（通道 3）：KEY SYMBOLS / QA 证据指针 vs 源码 grep 比对
 
 ### 阶段 3：反馈闭环（M3）
-- [ ] 反馈文件格式（`.aimake/feedback/<日期>-<目录>.md`：错误小节 + 证据 + 来源条目）
-- [ ] 四方确认逻辑（消费者 / 消费者的父目录 / owner / owner 的父目录仲裁）
-- [ ] 阈值触发（≥2 票 / 任一事实错误 / 自检失败）
-- [ ] `update --feedback`：决策 → 重生成（反馈注入提示词）→ 连锁更新父级摘要
-- [ ] update 报告写入 tasks.md（更新历史可跨会话查）
+- [x] 反馈文件格式（`.aimake/feedback/<日期>-<目录>.md`：错误小节 + 证据 + 来源条目）
+- [x] 四方确认逻辑（消费者 / 消费者的父目录 / owner / owner 的父目录仲裁）
+- [x] 阈值触发（≥2 票 / 任一事实错误 / 自检失败）
+- [x] `update --feedback`：决策 → 重生成（反馈注入提示词）→ 连锁更新父级摘要
+- [x] update 报告写入 tasks.md（更新历史可跨会话查）
 
 ### 阶段 4：工程化收尾（M4）
-- [ ] 防风暴测试：.aimake 双向排除、symlink 环、指纹幂等（跑两次 = 跑一次）、超时降级
-- [ ] 上下文预算机制（节点封顶 + 降级策略）
-- [ ] Nuitka 编译（Termux：patchelf/ccache/binutils/ldd/termux-elf-cleaner，版本 ≥ 2.6.7）
-- [ ] 文档完善（README + 消费协议）
+- [x] 防风暴测试：.aimake 双向排除、symlink 环、指纹幂等（跑两次 = 跑一次）、超时降级
+- [x] 上下文预算机制（节点封顶 + 降级策略）
+- [x] Nuitka 编译（Termux：patchelf/ccache/binutils/ldd/termux-elf-cleaner，版本 ≥ 2.6.7）
+- [x] 文档完善（README + 消费协议）
 
 ### 阶段 5：项目生成（M5）
-- [ ] `scaffold` 命令骨架：一句话 → 提案生成（codex exec 一轮，输出 proposal.md）
-- [ ] 提案确认交互（默认确认 / `--default` 快速模式）
-- [ ] 按目录粒度生成源码（复用 init 的并行/超时/失败重试机制）
-- [ ] 生成骨架：plan.md / task.md / README.md / proposal.md（人维护 md 哲学）
-- [ ] 生成后自动跑 init（知识树与项目同生）
-- [ ] 验证：scaffold 生成自己 → 对自己跑 init → 自举闭环
+- [x] `scaffold` 命令骨架：一句话 → 提案生成（codex exec 一轮，输出 proposal.md）
+- [x] 提案确认交互（默认确认 / `--default` 快速模式）
+- [x] 按目录粒度生成源码（复用 init 的并行/超时/失败重试机制）
+- [x] 生成骨架：plan.md / task.md / README.md / proposal.md（人维护 md 哲学）
+- [x] 生成后自动跑 init（知识树与项目同生）
+- [x] 验证：scaffold 生成自己 → 对自己跑 init → 自举闭环
 
 ## 5. 风险与对策 (Risks)
 

@@ -12,7 +12,7 @@ from .engine import load_budget, load_engine_config, write_default_config
 from .feedback import list_feedback
 from .graph import build_knowledge_graph
 from .meta import is_stale, write_meta
-from .prompt import TIER_LIGHT, NodeContext, build_prompt, build_prompt_budgeted, build_proposal_prompt, build_source_prompt, decide_tier, extract_overview
+from .prompt import TIER_FULL, TIER_LIGHT, NodeContext, build_prompt, build_prompt_budgeted, build_proposal_prompt, build_source_prompt, decide_tier, extract_overview
 from .runner import GenResult, run_engine, run_nodes
 from .skeleton import create_skeleton, mirror_prefix, resolve_knowledge_root
 from .walk import walk_project
@@ -545,8 +545,27 @@ def _parse_qa(text: str) -> list[tuple[str, str, str]]:
     return items
 
 
+def _symbol_candidates(prefix: Path, tokens: list[str], top_n: int = 10) -> list[tuple[int, str, str, str]]:
+    """全树 KEY SYMBOLS/FILES 关键词匹配 → 源码级候选（Top N 截断防噪音）。
+
+    零 token 确定性匹配；大项目（千级节点）运行时 <200ms，Linux 级演进为索引物化。
+    """
+    cands: list[tuple[int, str, str, str]] = []  # (score, rel, kind, item)
+    for rel, text in _iter_nodes(prefix):
+        for kind in ("KEY SYMBOLS", "FILES"):
+            for line in _section_text(text, kind):
+                s = line.lstrip("-|").strip()
+                if not s:
+                    continue
+                score = _match_score(tokens, s)
+                if score:
+                    cands.append((score, rel, kind, s))
+    cands.sort(key=lambda x: -x[0])
+    return cands[:top_n]
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
-    """ask：QA 条目确定性匹配 → 命中即答（带来源）；未命中 → 捷径导航/系统性否定。"""
+    """ask：QA 命中即答（带来源）；未命中 → 捷径导航 → 源码级候选 →「知识树未覆盖」。"""
     cwd = Path.cwd()
     target = Path(args.target).resolve() if args.target else cwd
     if not target.is_dir():
@@ -595,8 +614,17 @@ def cmd_ask(args: argparse.Namespace) -> int:
         print("提示：沿导航读目标节点 agents.md 可进一步定位。")
         return 1
 
-    print("知识树覆盖范围内未找到相关条目（系统性否定——核实过的「没有」，非猜测）")
-    print("建议：`aimake tree` 浏览全树 / 更换措辞 / 直接读源码。")
+    # 未命中 QA/捷径 → 源码级候选（知识树未覆盖 ≠ 项目里没有，只承诺可达）
+    candidates = _symbol_candidates(prefix, tokens)
+    if candidates:
+        print("知识树未覆盖此问题的 QA 条目，但找到源码级候选（Top 10）：")
+        for score, rel, kind, item in candidates:
+            print(f"  [{rel or '根'} {kind}] {item}")
+        print("→ 建议：读候选源码定位；或写反馈到 .aimake/feedback/ 补充 QA 条目。")
+        return 1
+
+    print("知识树未覆盖此问题（不声称「项目里没有」——知识库未覆盖 ≠ 不存在）。")
+    print("建议：`aimake tree` 浏览全树 / 更换措辞 / 直接读源码 / 写反馈补 QA。")
     return 1
 
 
