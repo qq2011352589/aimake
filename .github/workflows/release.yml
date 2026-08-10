@@ -1,0 +1,92 @@
+name: release
+
+# 触发：推送 v* tag（如 v0.1.0）→ 构建 + 发布 Release
+# 说明：Nuitka 不支持跨平台交叉编译 → matrix 每平台原生构建（并行）
+# 资产命名：aimake-<os>-<arch>（install.sh 按平台匹配下载）
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}  # 手动触发（仅构建 artifact，不发布）
+
+permissions:
+  contents: write
+
+jobs:
+  build-native:
+    name: 构建 ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: aimake-linux-x86_64
+          - os: macos-latest            # runner 原生为 arm64
+            asset: aimake-darwin-aarch64
+          - os: windows-latest
+            asset: aimake-windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: 安装 Nuitka
+        run: pip install nuitka zstandard ordered-set
+
+      - name: 编译（Nuitka onefile）
+        env:
+          NUITKA_CACHE_DIR: ${{ runner.temp }}/nuitka
+        run: python -m nuitka --standalone --onefile main.py
+
+      - name: 重命名为资产名
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv main.exe "${{ matrix.asset }}"
+          else
+            mv main.bin "${{ matrix.asset }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+      - name: 发布 Release 附件
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
+          generate_release_notes: true
+
+  # Linux ARM64：ubuntu runner + qemu 模拟 arm64 容器原生编译
+  # 注意：产物为 glibc 版，供 ARM Linux 服务器（树莓派等）；Termux 不可用
+  build-linux-arm64:
+    name: 构建 aimake-linux-aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: qemu 容器内编译（linux/arm64）
+        run: |
+          docker run --platform linux/arm64 --rm -v "$PWD":/work -w /work \
+            python:3.14-slim bash -c \
+            "pip install --quiet nuitka zstandard ordered-set && \
+             python -m nuitka --standalone --onefile main.py && \
+             mv main.bin aimake-linux-aarch64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aimake-linux-aarch64
+          path: aimake-linux-aarch64
+          if-no-files-found: error
+
+      - name: 发布 Release 附件
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: aimake-linux-aarch64
+          generate_release_notes: true
