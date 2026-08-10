@@ -1,0 +1,21 @@
+# —— 编辑器/工具 ——
+.omo/
+.idea/
+.vscode/
+*.swp
+
+# —— Python ——
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# —— 构建产物 ——
+dist/
+build/
+*.exe
+*.bin
+
+# —— aimake 生成产物（可用 `python -m aimake init` 重新生成） ——
+.aimake/
