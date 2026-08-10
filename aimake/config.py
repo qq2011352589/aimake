@@ -10,8 +10,10 @@ import fnmatch
 from pathlib import Path
 
 # 设计既定默认排除项（见 AGENTS.md「生成规则 · 可见性」）
+# .omo：opencode 内部会话目录（非项目知识）；其余为版本/构建/缓存噪音
 DEFAULT_IGNORES: tuple[str, ...] = (
     ".git",
+    ".omo",
     "node_modules",
     "__pycache__",
     "dist",

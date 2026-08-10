@@ -55,7 +55,7 @@
 - **环打破规则**：依赖边单向（依赖者→被依赖者）；若 A↔B 互依赖，按目录层级取"更基础的一方"为知识源，另一方降级为"仅标注"。
 - **依赖发现 = 多通道**：① import 静态扫描 → 只产**候选名单**（纯目录名列表，提升召回，不携带知识内容）；② 模型识别配置引用/运行时加载/共享契约/环境约定（import 看不见的隐性依赖）。
 - **上下文预算**：每节点注入量 = 本目录文件 + 子级摘要 + 候选名单，封顶可配置（超预算降级：截断文件清单、子级摘要只留名字）。总成本 = 目录数 × 节点预算，**严格线性**。
-- **可见性**：默认排除 `.git`、`node_modules`、`__pycache__`、`dist/`、`build/` 及 `.aimake` 自身（ignore 清单可配置，待定）。
+- **可见性**：默认排除 `.git`、`.omo`（opencode 会话目录）、`node_modules`、`__pycache__`、`dist/`、`build/` 及 `.aimake` 自身（ignore 清单可配置：`.aimakeignore`）。
 - **init 语义（运行位置 ≠ 扫描目标）**：知识根 = 运行目录 `.aimake/`；扫描目标 = 显式指定的项目路径（`aimake init <目标>`）或全部可见子项目——**绝不扫描整个运行目录**。
 - **内容分级（大项目策略）**：低复杂度目录（<10 文件、无子目录）生成**轻量 agents.md**（SUMMARY 级），高复杂度目录才全 schema；提示词要求同级目录差异化摘要。
 - **子树分批 init**：大项目可 `aimake init <子路径>` 分阶段生成，成本分散到多个时间段。
@@ -128,7 +128,7 @@
 aimake/
 ├── aimake/                           # Python 包（CLI 入口）
 │   ├── __main__.py                   # CLI：10 命令全部实现
-│   ├── config.py                     # ignore 规则（默认 6 项 + .aimakeignore + fnmatch）
+│   ├── config.py                     # ignore 规则（默认 7 项 + .aimakeignore + fnmatch）
 │   ├── walk.py                       # 目录遍历（followlinks=False + 剪枝）
 │   ├── imports.py                    # import 静态扫描（多语言候选名单）
 │   ├── graph.py                      # 三类边知识图（树边 + 依赖候选 + 拓扑序）
@@ -153,7 +153,7 @@ aimake/
 | 任务清单 | task.md | 任务拆分与状态 |
 | 产品设计 | 本文档「核心设计」 | 多轮讨论沉淀的完整设计 |
 | CLI 入口 | aimake/__main__.py | 10 命令分发（scan/init/update/status/tree/ask/scaffold/maintain） |
-| ignore 规则 | aimake/config.py | 默认 6 项 + .aimakeignore + fnmatch 通配 |
+| ignore 规则 | aimake/config.py | 默认 7 项（含 .omo）+ .aimakeignore + fnmatch 通配 |
 | 目录遍历 | aimake/walk.py | os.walk + 剪枝 + 可见目录树 |
 | import 扫描 | aimake/imports.py | 多语言 import 候选名单（纯目录名） |
 | 知识图 | aimake/graph.py | 树边 + 依赖候选 + 后序拓扑序 |
