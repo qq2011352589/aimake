@@ -1,0 +1,2 @@
+# —— aimake 自举：自定义忽略（.omo 是 opencode 内部会话目录） ——
+.omo/
