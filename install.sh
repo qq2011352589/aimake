@@ -26,19 +26,20 @@ esac
 case "$ARCH" in
   x86_64|amd64)  ABI=x86_64 ;;
   aarch64|arm64) ABI=aarch64 ;;
-  armv7l|armhf)  ABI=armv7l ;;
+  armv7l|armhf)  ABI=arm ;;
+  i686)          ABI=i686 ;;
   *) echo "错误：不支持的架构 $ARCH" >&2; exit 1 ;;
 esac
 
 # ---------- Termux 特例 ----------
-# Android 用 bionic libc，跑不了 release 的 glibc 产物 → 提示本地编译
+# Android 用 bionic libc，GitHub Release 的 glibc 产物无法运行
+# → 改为下载 Termux 专用资产（aimake-termux-<arch>，由 CI 在 termux-docker 容器内编译）
+# 安装目录默认 $PREFIX/bin（其余平台默认 $HOME/.local/bin）
 if [ -n "$PREFIX" ] && [ -d "$PREFIX/bin" ]; then
-  echo "检测到 Termux（Android/bionic）：GitHub Release 产物为 glibc 版，无法在 Termux 运行。"
-  echo "请在 Termux 本地编译（仓库已内置）："
-  echo "  pkg install binutils patchelf ccache termux-elf-cleaner"
-  echo "  pip install nuitka && python -m nuitka --standalone --onefile main.py"
-  echo "  ./main.bin scan"
-  exit 1
+  PLAT=termux
+  if [ -z "$AIMAKE_INSTALL_DIR" ]; then
+    AIMAKE_INSTALL_DIR="$PREFIX/bin"
+  fi
 fi
 
 # ---------- 下载 ----------
@@ -61,8 +62,22 @@ mkdir -p "$DEST"
 
 echo "→ 平台：${PLAT}-${ABI}"
 echo "→ 下载：${URL}"
-curl -fsSL "$URL" -o "$DEST/aimake"
-chmod +x "$DEST/aimake"
+curl -fsSL "$URL" -o "$DEST/aimake.bin"
+chmod +x "$DEST/aimake.bin"
+
+# Termux：无静态 libpython → bionic 产物依赖 libpython3.14.so
+# 生成启动器（内置 LD_LIBRARY_PATH 定位 $PREFIX/lib 下的 libpython）
+if [ "$PLAT" = "termux" ]; then
+  cat > "$DEST/aimake" <<'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+SELF="$(dirname "$(readlink -f "$0")")/aimake.bin"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${PREFIX:-/data/data/com.termux/files/usr}/lib"
+exec "$SELF" "$@"
+EOF
+  chmod +x "$DEST/aimake"
+else
+  mv "$DEST/aimake.bin" "$DEST/aimake"
+fi
 
 echo "→ 安装完成：$DEST/aimake"
 echo "→ 验证："
