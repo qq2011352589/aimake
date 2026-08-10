@@ -122,19 +122,21 @@ jobs:
 
       - name: Termux 容器内编译（${{ matrix.platform }}）
         run: |
-          # 挂载卷属主为 root，Termux 容器以 system 用户运行且禁 root
-          # → 先复制到容器内 $HOME（可写），编译完成后拷回
-          docker run --platform ${{ matrix.platform }} --rm \
+          # 容器以 system(1000) 运行；挂载卷属主 root 只读不可写
+          # → 复制源码到容器内 $HOME（属主 1000，可写）编译，产物 docker cp 取回
+          docker run --platform ${{ matrix.platform }} --name termux-build-${{ matrix.arch }} \
             -v "$PWD":/home/builder/project \
             termux/termux-docker:${{ matrix.arch }} bash -c \
             "set -e
              pkg update -y
              pkg install -y python binutils patchelf ccache termux-elf-cleaner
              pip install nuitka zstandard ordered-set
-             cp -r /home/builder/project /home/builder/work
-             cd /home/builder/work
-             python -m nuitka --standalone --onefile --assume-yes-for-downloads main.py
-             cp main.bin /home/builder/project/aimake-termux-${{ matrix.arch }}"
+             cp -a /home/builder/project \$HOME/work
+             cd \$HOME/work
+             python -m nuitka --standalone --onefile --assume-yes-for-downloads main.py"
+          docker cp termux-build-${{ matrix.arch }}:/data/data/com.termux/files/home/work/main.bin \
+            ./aimake-termux-${{ matrix.arch }}
+          docker rm termux-build-${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
