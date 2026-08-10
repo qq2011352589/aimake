@@ -58,8 +58,17 @@ def read_meta(meta_path: Path) -> dict[str, str]:
 
 
 def current_fingerprint(source_dir: Path, files: list[str]) -> dict[str, str]:
-    """计算当前指纹（用于与 .meta 比对）。"""
-    return {name: file_hash(source_dir / name) for name in files}
+    """计算当前指纹（用于与 .meta 比对）。
+
+    文件缺失（记录过但被删）以空串占位 → 与 .meta 差异即判过期。
+    """
+    current: dict[str, str] = {}
+    for name in files:
+        try:
+            current[name] = file_hash(source_dir / name)
+        except OSError:
+            current[name] = ""
+    return current
 
 
 def is_stale(source_dir: Path, files: list[str], meta_path: Path) -> bool:

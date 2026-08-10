@@ -90,7 +90,15 @@ def _run_with_retry(
 
 
 def _mock_output(prompt: str) -> str:
-    """mock 引擎：回显提示词中注入的上下文，产出可验证的 agents.md。"""
+    """mock 引擎：回显提示词中注入的上下文，产出可验证的 agents.md。
+
+    标记检查顺序：最具体的在前（源码生成 prompt 内嵌提案文本，
+    须先匹配源码标记再匹配提案标记）。
+    """
+    if "# 源码生成任务" in prompt:
+        return _mock_source_block()
+    if "# 项目提案" in prompt:
+        return _mock_proposal()
     rel = _section(prompt, "# 目标目录")
     rel = rel[0] if rel else ""
     children = _section(prompt, "# 子目录摘要")
@@ -126,3 +134,30 @@ def _section(prompt: str, header: str) -> list[str]:
         if in_section and line.strip():
             out.append(line.strip().lstrip("- "))
     return out
+
+
+def _mock_proposal() -> str:
+    """mock 提案：确定性占位（真实提案由配置的 AI 引擎生成）。"""
+    return (
+        "# 项目提案 — （mock 占位）\n"
+        "## 一句话定位\n"
+        "（mock 引擎占位——真实提案由配置的 AI 引擎生成）\n"
+        "## 技术栈\n"
+        "- （mock：Python 3 + 标准库）\n"
+        "## 目录结构\n"
+        "```\n"
+        "src/     # 源码\n"
+        "tests/   # 测试\n"
+        "```\n"
+        "## 功能清单\n"
+        "- （mock：功能占位）\n"
+        "## 里程碑\n"
+        "- M1：骨架 ｜ M2：核心 ｜ M3：收尾\n"
+        "## 风险\n"
+        "- （mock：风险占位）\n"
+    )
+
+
+def _mock_source_block() -> str:
+    """mock 源码清单：一个占位文件块（真实生成由配置的 AI 引擎完成）。"""
+    return "```README.md\n（mock 占位文件——真实源码由配置的 AI 引擎生成）\n```\n"

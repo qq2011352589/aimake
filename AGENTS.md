@@ -116,7 +116,7 @@
 
 ### 产品形态
 
-- **CLI**：`scan`（扫描可见目录树，已实现）/ `init <目标>`（全树生成到知识根镜像，已实现）/ `update [路径]`（指纹驱动受影响子图重生成，已实现）/ `update --feedback`（反馈队列）/ `status`（过期清单 + 待处理反馈 + 符号自检，已实现）/ `tree`（知识树总览 = 全局索引物化，已实现）/ `ask`（QA 问答 + 捷径表匹配，命中即答，答案带来源）/ `scaffold "一句话"`（从描述生成项目骨架 + 自动 init）。
+- **CLI**：`scan`（扫描可见目录树，已实现）/ `init <目标>`（全树生成到知识根镜像，已实现）/ `update [路径]`（指纹驱动受影响子图重生成，已实现）/ `update --feedback`（反馈队列，已实现）/ `status`（过期清单 + 待处理反馈 + 符号自检，已实现）/ `tree`（知识树总览 = 全局索引物化，已实现）/ `ask`（QA 问答 + 捷径表匹配，命中即答，答案带来源，已实现）/ `scaffold "一句话"`（从描述生成项目骨架 + 自动 init，已实现）。
 - **用户输入双层**：维护层 = 用户敲 CLI 命令；消费层 = 初始化后用户正常开发，AI 工具读 `.aimake` 知识树——**aimake 不拦截任何对话，是"生成一次、随时被消费"的知识底座**。
 - **实现心智模型（make 类比）**：aimake = 知识的 make——依赖图 + 增量构建（指纹）+ 并行 + dry-run；codex exec / opencode run 是 Makefile 里的 cc（可插拔引擎）。AI 输出**分流**：编译产物进文件系统、导航判断归消费方 AI、依赖修正进图（下一轮生效）、错误进反馈队列（见生成规则/更新机制）。
 - **init 流程**：① 确定知识根（运行目录 `.aimake/`）与扫描目标 → ② 扫描目标目录树 → ③ 建依赖图与调用计划 → ④ 创建知识根镜像骨架 + `.meta` → ⑤ 叶子节点并行调用 codex exec（内容分级）→ ⑥ 父级等子级完成后调用（注入子级摘要 + 依赖候选名单）→ ⑦ 根节点最后生成（聚合 + 跨目录契约 + 全局捷径表）→ ⑧ 写指纹 + 可选 `.aimake-link`，输出报告（知识树、调用次数、耗时）。
@@ -223,8 +223,12 @@ python -m aimake tree
 # 问答：命中 QA 即答（答案带来源标注）
 python -m aimake ask "问题"
 
-# 构建（Nuitka → 独立可执行）
-python -m nuitka --standalone --onefile aimake.py
+# 构建（Nuitka → 独立可执行；Termux 需 glibc 工具链 PATH + LD_LIBRARY_PATH）
+export PATH="$PATH:$PREFIX/glibc/bin"   # patchelf/ldd 在 glibc 前缀
+python -m nuitka --standalone --onefile main.py
+mkdir -p bin && mv main.bin bin/aimake.bin
+# 启动器 bin/aimake 已内置 LD_LIBRARY_PATH（bionic 链接器定位 libpython）
+./bin/aimake scan
 ```
 
 ## NOTES
@@ -232,7 +236,8 @@ python -m nuitka --standalone --onefile aimake.py
 - 生成环节依赖 `codex exec` 认证（OpenAI 账号/API key）或 opencode；调用次数 ≈ 目录数，注意 token 成本。
 - 消费侧成本 > 生成侧成本（每次会话都会发生）：DEPENDS / SUB-KNOWLEDGE / QA 必须保持"指针 + 摘要"形态，按需加载。
 - 反馈驱动更新的软肋：消费方 AI 需要自觉写反馈——写进消费协议，不强制；不写反馈知识树仍可用，纠错靠人工 update。
-- Termux 环境：Nuitka 需 `pkg install patchelf ccache binutils ldd termux-elf-cleaner`，版本 ≥ 2.6.7（此前有 libpython 链接 bug）。
+- Termux 环境：Nuitka 需 `pkg install patchelf ccache binutils ldd termux-elf-cleaner`，版本 ≥ 2.6.7（此前有 libpython 链接 bug）。注意：Termux 的 glibc 包装在 `$PREFIX/glibc/bin`（patchelf/ldd 需加 PATH）；无静态 libpython → 编译产物依赖 libpython3.14.so，需 `LD_LIBRARY_PATH=$PREFIX/lib` 运行（`bin/aimake` 启动器已封装）。
+- 测试：`python3 -m unittest discover tests`（零依赖，12 用例覆盖四道闸）。
 
 ---
 

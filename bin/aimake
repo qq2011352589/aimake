@@ -1,0 +1,5 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# aimake 独立可执行启动器（Termux：bionic 链接器需 LD_LIBRARY_PATH 定位 libpython）
+SELF="$(dirname "$(readlink -f "$0")")/aimake.bin"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/data/data/com.termux/files/usr/lib"
+exec "$SELF" "$@"

@@ -67,6 +67,20 @@ def load_engine_config(knowledge_root: Path, name: str | None = None) -> EngineS
     return PRESETS["codex"]
 
 
+def load_budget(knowledge_root: Path, default: int = 20000) -> int:
+    """每节点提示词预算（字符数）。CLI --budget 覆盖后由调用方传入。"""
+    cfg_file = knowledge_root / ENGINE_CONFIG_NAME
+    if cfg_file.is_file():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            b = data.get("budget")
+            if isinstance(b, int) and b >= 0:
+                return b
+        except (json.JSONDecodeError, OSError):
+            pass
+    return default
+
+
 def write_default_config(knowledge_root: Path) -> Path:
     """知识根缺失配置时写入默认（用户可自行修改——配置由用户决定）。"""
     cfg_file = knowledge_root / ENGINE_CONFIG_NAME
@@ -76,6 +90,7 @@ def write_default_config(knowledge_root: Path) -> Path:
             "engine": {"name": "codex", "prompt_how": "arg", "timeout": 300},
             "concurrency": 4,
             "retries": 2,
+            "budget": 20000,  # 每节点提示词预算（字符数，超预算降级）
         }
         cfg_file.write_text(
             json.dumps(default, ensure_ascii=False, indent=2) + "\n",

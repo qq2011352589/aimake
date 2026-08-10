@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # 内容分级阈值：低复杂度目录（<10 文件且无子目录）→ 轻量档
 LIGHT_TIER_MAX_FILES = 10
@@ -60,6 +60,51 @@ def build_prompt(ctx: NodeContext, tier: str = "", is_root: bool = False) -> str
     if tier == TIER_LIGHT:
         return _build_light(ctx)
     return _build_full(ctx, is_root=is_root)
+
+
+def estimate_chars(text: str) -> int:
+    """提示词大小估算（字符数，确定性——预算单位）。"""
+    return len(text)
+
+
+def build_prompt_budgeted(
+    ctx: NodeContext,
+    tier: str,
+    is_root: bool,
+    budget: int | None,
+) -> tuple[str, bool]:
+    """带预算的提示词构造：超预算按策略降级。
+
+    降级阶梯：① 子级摘要只留名字 → ② 文件清单截断 → ③ 降为轻量档。
+    返回 (prompt, 是否降级)。budget ≤ 0 表示不限制。
+    """
+    if budget is None or budget <= 0:
+        return build_prompt(ctx, tier, is_root), False
+
+    prompt = build_prompt(ctx, tier, is_root)
+    if estimate_chars(prompt) <= budget:
+        return prompt, False
+
+    # ① 子级摘要只留名字（保留依赖候选）
+    ctx1 = replace(
+        ctx, child_summaries=[(name, "") for name, _ in ctx.child_summaries]
+    )
+    p1 = build_prompt(ctx1, tier, is_root)
+    if estimate_chars(p1) <= budget:
+        return p1, True
+
+    # ② 文件清单截断（保留前 50）
+    max_files = 50
+    if len(ctx1.files) > max_files:
+        ctx2 = replace(ctx1, files=ctx1.files[:max_files])
+        p2 = build_prompt(ctx2, tier, is_root)
+        if estimate_chars(p2) <= budget:
+            return p2, True
+
+    # ③ 降为轻量档（SUMMARY 级，文件清单也截断）
+    ctx3 = replace(ctx1, files=ctx1.files[:max_files])
+    p3 = _build_light(ctx3)
+    return p3, True
 
 
 def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
@@ -125,3 +170,47 @@ def _build_light(ctx: NodeContext) -> str:
 ## FILES       ← 每文件一句话职责
 
 规则：内容中文；只输出 agents.md 文件内容本身，不要任何解释。"""
+
+
+def build_proposal_prompt(description: str) -> str:
+    """scaffold 提案提示词：一句话 → 结构化项目提案（T26）。
+
+    提案 = 目录结构 + 技术栈 + 功能清单 + 里程碑，供用户确认后生成源码。
+    """
+    return f"""你是项目架构师。根据用户的一句话需求，产出一份**项目提案**（不写代码）。
+
+# 用户需求
+{description}
+
+# 输出要求（中文，Markdown）：
+# 项目提案 — <项目名>
+## 一句话定位      ← 1 句
+## 技术栈          ← 语言/框架/依赖（可替换，标注理由）
+## 目录结构        ← 缩进列表（每行一个目录，缩进=层级，目录名英文，禁止树形符号 ──）
+## 功能清单        ← 3-8 个核心功能（每个一句）
+## 里程碑          ← 3 个阶段（每阶段：目标 + 交付物）
+## 风险            ← 2-3 条（影响 + 对策）
+
+规则：
+1. 目录结构是生成代码的依据——目录名用英文，用途用中文注释。
+2. 若需求模糊，取合理默认并标注「（假设）」。
+3. 只输出提案 Markdown 本身，不要解释。"""
+
+
+def build_source_prompt(rel_dir: str, proposal: str) -> str:
+    """scaffold 源码生成提示词：按提案生成 <rel_dir> 目录的文件清单（T28）。
+
+    输出格式：每文件一个 fenced 块，块首行 = 相对 <rel_dir> 的文件名。
+    """
+    return f"""# 源码生成任务
+根据项目提案，生成目录 <{rel_dir}> 的源码文件。
+
+# 项目提案
+{proposal[:2000]}
+
+# 输出要求（清单格式，直接输出文件块序列，不要解释）：
+- 每个文件一个 fenced 代码块，代码块首行 = 相对 <{rel_dir}> 的文件名：
+```main.py
+文件内容
+```
+- 只生成属于 <{rel_dir}> 的文件；子目录文件由各自的生成任务负责。"""
