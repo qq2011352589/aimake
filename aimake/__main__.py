@@ -42,14 +42,22 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _collect_waves(topo_order: list) -> list[list]:
-    """按"距叶子高度"分组波浪：叶子（0）→ 根；同层节点互相独立可并行。"""
+def _compute_heights(topo_order: list) -> dict[str, int]:
+    """全量计算"距叶子高度"（后序：子级高度已算好）。"""
     height: dict[str, int] = {}
-    for node in topo_order:  # 后序：子级高度已算好
+    for node in topo_order:
         if not node.children:
             height[node.rel] = 0
         else:
             height[node.rel] = max(height[c.rel] + 1 for c in node.children)
+    return height
+
+
+def _collect_waves(topo_order: list, height: dict[str, int]) -> list[list]:
+    """按"距叶子高度"分组波浪：叶子（0）→ 根；同层节点互相独立可并行。
+
+    高度表须预先全量计算（子集调用时不会引用缺失的兄弟节点）。
+    """
     waves: dict[int, list] = {}
     for node in topo_order:
         waves.setdefault(height[node.rel], []).append(node)
@@ -69,8 +77,32 @@ def _collect_child_summaries(node, prefix: Path) -> list[tuple[str, str]]:
     return summaries
 
 
+def _generate_waves(waves: list, node_plan: dict, engine, args) -> tuple[int, list]:
+    """执行波浪生成并写产物。返回 (本轮成功数, 本轮失败列表)。"""
+    ok = 0
+    failed: list = []
+    for wi, wave in enumerate(waves, 1):
+        plan = [(n.rel, node_plan[n.rel][0], node_plan[n.rel][1]) for n in wave]
+        gen = run_nodes(
+            [(rel, p, c) for rel, p, c in plan],
+            engine,
+            concurrency=args.concurrency,
+            retries=args.retries,
+        )
+        for r in gen:
+            if r.ok:
+                (node_plan[r.rel][2] / "agents.md").write_text(
+                    r.output, encoding="utf-8"
+                )
+                ok += 1
+            else:
+                failed.append(r)
+        print(f"  层 {wi}: 成功 {sum(1 for r in gen if r.ok)}/{len(gen)}")
+    return ok, failed
+
+
 def cmd_init(args: argparse.Namespace) -> int:
-    """init：骨架 + .meta + 分层波浪生成（叶子 → 父级 → 根）。"""
+    """init：骨架 + .meta + 两阶段生成（波浪 + 失败快照补一轮）。"""
     cwd = Path.cwd()
     target = Path(args.target).resolve() if args.target else cwd
     if not target.is_dir():
@@ -90,58 +122,86 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"引擎：{engine.name}（command={engine.command or '内置'}）")
     print(f"节点总数：{len(graph.nodes)}")
 
+    # 节点计划：prompt 一次构造，两阶段复用（引用快照、不等待）
+    node_plan: dict[str, tuple[str, Path, Path]] = {}
+    for node in graph.topo_order():
+        mirror = prefix / node.rel if node.rel else prefix
+        files = result.files.get(node.path, [])
+        child_summaries = _collect_child_summaries(node, prefix)
+        tier = decide_tier(len(files), len(node.children))
+        ctx = NodeContext(
+            rel=node.rel or ".",
+            files=files,
+            child_summaries=child_summaries,
+            dep_candidates=node.dep_candidates,
+        )
+        # T9：根节点（rel=""）加全局增强要求
+        prompt = build_prompt(ctx, tier, is_root=node.rel == "")
+        node_plan[node.rel] = (prompt, node.path, mirror)
+
     if args.dry_run:
         print("\n== 生成计划（dry-run）==")
-        for wave in _collect_waves(graph.topo_order()):
-            for node in wave:
-                mirror = prefix / node.rel if node.rel else prefix
-                tier = decide_tier(
-                    len(result.files.get(node.path, [])), len(node.children)
-                )
-                tag = "轻量" if tier == TIER_LIGHT else "全量"
-                print(f"  [{tag}] {mirror.relative_to(cwd)}/agents.md")
+        for node in graph.topo_order():
+            mirror = node_plan[node.rel][2]
+            tier = decide_tier(
+                len(result.files.get(node.path, [])), len(node.children)
+            )
+            tag = "轻量" if tier == TIER_LIGHT else "全量"
+            print(f"  [{tag}] {mirror.relative_to(cwd)}/agents.md")
         return 0
 
-    # 分层波浪生成
-    waves = _collect_waves(graph.topo_order())
-    total_ok = 0
-    failed: list[GenResult] = []
-    print(f"\n== 分层生成（{len(waves)} 层，并发 {args.concurrency}）==")
-    for wi, wave in enumerate(waves, 1):
-        plan: list[tuple[str, str, Path, Path]] = []
-        for node in wave:
-            mirror = prefix / node.rel if node.rel else prefix
-            files = result.files.get(node.path, [])
-            child_summaries = _collect_child_summaries(node, prefix)
-            tier = decide_tier(len(files), len(node.children))
-            ctx = NodeContext(
-                rel=node.rel or ".",
-                files=files,
-                child_summaries=child_summaries,
-                dep_candidates=node.dep_candidates,
-            )
-            # T9：根节点（rel=""）加全局增强要求（跨目录契约 + 全局捷径表）
-            plan.append(
-                (node.rel, build_prompt(ctx, tier, is_root=node.rel == ""),
-                 node.path, mirror)
-            )
+    heights = _compute_heights(graph.topo_order())
+    # 阶段一：分层波浪生成
+    waves1 = _collect_waves(graph.topo_order(), heights)
+    print(f"\n== 阶段一：分层生成（{len(waves1)} 层，并发 {args.concurrency}）==")
+    _ok, failed = _generate_waves(waves1, node_plan, engine, args)
+    print(f"阶段一：成功 {_ok}/{len(graph.nodes)} ｜ 失败 {len(failed)}")
 
-        gen = run_nodes(
-            [(rel, prompt, cwd_) for rel, prompt, cwd_, _ in plan],
+    # 阶段二：失败节点用快照补一轮；修复后刷新祖先链（最坏两轮收敛）
+    if failed:
+        print("\n== 阶段二：快照补一轮（失败重试 + 祖先链刷新）==")
+        retry = run_nodes(
+            [(rel, node_plan[rel][0], node_plan[rel][1]) for rel in
+             {r.rel for r in failed}],
             engine,
             concurrency=args.concurrency,
             retries=args.retries,
         )
-        mirror_map = {rel: mirror for rel, _, _, mirror in plan}
-        for r in gen:
+        newly_ok: list = []
+        still_failed: list = []
+        for r in retry:
             if r.ok:
-                (mirror_map[r.rel] / "agents.md").write_text(r.output, encoding="utf-8")
-                total_ok += 1
+                (node_plan[r.rel][2] / "agents.md").write_text(
+                    r.output, encoding="utf-8"
+                )
+                newly_ok.append(r)
             else:
-                failed.append(r)
-        print(f"  层 {wi}: 成功 {sum(1 for r in gen if r.ok)}/{len(gen)}")
+                still_failed.append(r)
+        print(f"  重试：修复 {len(newly_ok)} ｜ 仍失败 {len(still_failed)}")
 
-    print(f"\n成功：{total_ok}/{len(graph.nodes)} ｜ 失败：{len(failed)}")
+        # 受影响祖先链（沿树边向上，含根）——用修复后的快照重生成
+        affected: set[str] = set()
+        for r in newly_ok:
+            rel = r.rel
+            while rel:
+                rel = rel.rsplit("/", 1)[0] if "/" in rel else ""
+                if rel in node_plan:
+                    affected.add(rel)
+        if affected:
+            order = [n for n in graph.topo_order() if n.rel in affected]
+            waves2 = _collect_waves(order, heights)
+            print(f"  祖先链刷新：{len(affected)} 个节点（{'、'.join(sorted(r or '根' for r in affected))}）")
+            _ok2, fail2 = _generate_waves(waves2, node_plan, engine, args)
+            failed = [r for r in still_failed] + fail2
+        else:
+            failed = still_failed
+
+    # 最终统计：以镜像目录实际落盘为准
+    present = sum(
+        1 for n in graph.nodes.values()
+        if (node_plan[n.rel][2] / "agents.md").is_file()
+    )
+    print(f"\n产物落盘：{present}/{len(graph.nodes)} ｜ 失败：{len(failed)}")
     for r in failed:
         print(f"  [失败] {r.rel}：{r.error}")
 
