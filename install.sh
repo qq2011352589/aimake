@@ -27,7 +27,6 @@ case "$ARCH" in
   x86_64|amd64)  ABI=x86_64 ;;
   aarch64|arm64) ABI=aarch64 ;;
   armv7l|armhf)  ABI=arm ;;
-  i686)          ABI=i686 ;;
   *) echo "错误：不支持的架构 $ARCH" >&2; exit 1 ;;
 esac
 

@@ -63,40 +63,7 @@ jobs:
           files: ${{ matrix.asset }}
           generate_release_notes: true
 
-  # Linux ARM64：ubuntu runner + qemu 模拟 arm64 容器原生编译
-  # 注意：产物为 glibc 版，供 ARM Linux 服务器（树莓派等）；Termux 不可用
-  build-linux-arm64:
-    name: 构建 aimake-linux-aarch64
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 注册 qemu binfmt（arm64 容器可执行）
-        uses: docker/setup-qemu-action@v3
-
-      - name: qemu 容器内编译（linux/arm64）
-        run: |
-          docker run --platform linux/arm64 --rm -v "$PWD":/work -w /work \
-            python:3.14-slim bash -c \
-            "apt-get update -qq && apt-get install -y -qq patchelf binutils && \
-             pip install --quiet nuitka zstandard ordered-set && \
-             python -m nuitka --standalone --onefile --assume-yes-for-downloads main.py && \
-             mv main.bin aimake-linux-aarch64"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aimake-linux-aarch64
-          path: aimake-linux-aarch64
-          if-no-files-found: error
-
-      - name: 发布 Release 附件
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: aimake-linux-aarch64
-          generate_release_notes: true
-
-  # Termux 四架构：termux/termux-docker 容器（bionic libc）内原生编译
+  # Termux 三架构：termux/termux-docker 容器（bionic libc）内原生编译
   # 注意：产物为 bionic 版，供 Android/Termux 使用（与上方 glibc 版不可互换）
   # Termux 包管理器禁 root → 容器内以 system 用户跑 pkg/pip（termux-docker 默认 entrypoint 已降权）
   build-termux:
@@ -112,8 +79,6 @@ jobs:
             platform: linux/arm/v7
           - arch: x86_64
             platform: linux/amd64
-          - arch: i686
-            platform: linux/386
     steps:
       - uses: actions/checkout@v4
 
