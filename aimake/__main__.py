@@ -72,6 +72,34 @@ def _collect_child_summaries(node, prefix: Path) -> list[tuple[str, str]]:
     return summaries
 
 
+# 内容注入：预算内优先核心文件（按大小升序），保证 codex 基于真实代码撰写
+_CONTENT_BUDGET_RATIO = 0.5  # 文件内容占预算比例上限
+_PER_FILE_MAX_CHARS = 4000   # 单文件注入截断
+_SKIP_FILE_BYTES = 200_000   # 跳过超大文件
+
+
+def _load_file_contents(node_path: Path, files: list[str], budget: int | None) -> list[tuple[str, str]]:
+    """预算内注入文件内容：按大小升序优先（README/入口/小文件），累计 ≤ 预算一半。"""
+    max_chars = int(budget * _CONTENT_BUDGET_RATIO) if budget and budget > 0 else 8000
+    entries: list[tuple[str, str]] = []
+    total = 0
+    for fname in sorted(files, key=lambda f: (node_path / f).stat().st_size):
+        p = node_path / fname
+        try:
+            if p.stat().st_size > _SKIP_FILE_BYTES:
+                continue
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if len(text) > _PER_FILE_MAX_CHARS:
+            text = text[:_PER_FILE_MAX_CHARS] + "\n…（截断）"
+        if total + len(text) > max_chars:
+            break  # 小文件优先，超出预算停止
+        entries.append((fname, text))
+        total += len(text)
+    return entries
+
+
 def _build_node_plan(
     graph, result, prefix: Path, budget: int | None = None,
 ) -> tuple[dict, int]:
@@ -87,9 +115,14 @@ def _build_node_plan(
         files = result.files.get(node.path, [])
         child_summaries = _collect_child_summaries(node, prefix)
         tier = decide_tier(len(files), len(node.children))
+        file_contents = (
+            _load_file_contents(node.path, files, budget)
+            if tier == TIER_FULL else []
+        )
         ctx = NodeContext(
             rel=node.rel or ".",
             files=files,
+            file_contents=file_contents,
             child_summaries=child_summaries,
             dep_candidates=node.dep_candidates,
         )

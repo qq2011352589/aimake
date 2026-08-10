@@ -41,6 +41,7 @@ aimake update --feedback project-a                 # 反馈驱动处理消费侧
 - **三类边**：树边（目录层级，管"有什么"）、依赖边（跨目录契约，只存指针+摘要，管"需要知道什么"）、捷径边（问题→节点语义路由，管"模糊问题直达哪里"）
 - **owner 语义**：每个目录的知识节点是权威管理者——知识所有权、边界守卫、委托授权；它是导航员不是围墙
 - **统一 schema**：OVERVIEW / SUB-KNOWLEDGE / DEPENDS / FILES / WHERE TO LOOK / QA / KEY SYMBOLS / COMMANDS / ANTI-PATTERNS / EXTERNAL（子级可被父级机器解析聚合；内容中文、.md 后缀）
+- **大项目策略**：内容分级（轻量/全量）；按需子树 `init <子路径>`；深度限制 `--depth`；超大项目符号倒排索引（ctags 式）支撑 ask 毫秒级查询
 
 ### 更新机制（三通道，全部显式触发）
 
@@ -67,7 +68,7 @@ aimake update [目标] [--engine E] [--budget N]  # 指纹驱动重生成受影�
 aimake update --feedback [目标] [--engine E]    # 反馈驱动：四方确认→注入重生成→连锁
 aimake status [目标]                            # 过期清单 / 反馈队列详情 / 符号自检
 aimake tree [目标]                              # 知识树总览（全局索引物化 + 捷径表）
-aimake ask "问题" [目标]                         # QA 命中即答（带来源）/ 捷径导航 / 系统性否定
+aimake ask "问题" [目标]                         # QA 命中即答（带来源）/ 捷径导航 / 源码级候选
 aimake scaffold "一句话" [--out 目录] [--default]  # 从描述生成项目：提案→确认→源码→骨架→自动 init
 aimake maintain [目标]                             # 一键维护：状态检查→指纹更新→反馈处理→报告
 aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（add/remove/list/reset）
@@ -81,6 +82,8 @@ aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（a
 ```
 
 预置引擎：`codex` / `opencode` / `mock`（内置确定性生成器，无认证测试用）。`--engine <自定义名>` + 配置 `command` 即可接入任意 CLI。
+
+**codex 引擎的模型/认证/沙箱全部继承 `~/.codex/config.toml`**（aimake 只管 `command`，不碰 codex 配置）：`codex login` 认证、`model`/`model_provider` 选模型、第三方 provider 配 `base_url`、Termux 用 `sandbox_mode = "danger-full-access"`（Android 无 bubblewrap）。
 
 ## 消费协议（AI 工具读取约定）
 

@@ -54,10 +54,12 @@
 - **两阶段生成（防跨目录死锁）**：① 按树序全量生成，依赖缺失先跳过并标记；② 对标记节点用依赖方"已生成的快照"补一轮。**引用快照、不等待**——环的代价只是旧快照，不是死锁；最坏两轮收敛。
 - **环打破规则**：依赖边单向（依赖者→被依赖者）；若 A↔B 互依赖，按目录层级取"更基础的一方"为知识源，另一方降级为"仅标注"。
 - **依赖发现 = 多通道**：① import 静态扫描 → 只产**候选名单**（纯目录名列表，提升召回，不携带知识内容）；② 模型识别配置引用/运行时加载/共享契约/环境约定（import 看不见的隐性依赖）。
-- **上下文预算**：每节点注入量 = 本目录文件 + 子级摘要 + 候选名单，封顶可配置（超预算降级：截断文件清单、子级摘要只留名字）。总成本 = 目录数 × 节点预算，**严格线性**。
+- **上下文预算**：每节点注入量 = **本目录文件内容**（预算内优先核心文件：README/入口/__init__，按大小升序）+ 子级摘要 + 候选名单，封顶可配置（超预算降级：截断文件内容 → 只留文件清单 → 子级摘要只留名字）。总成本 = 目录数 × 节点预算，**严格线性**。
+  - 注入文件内容是**理解深度**的关键：codex 直接基于真实内容写，而非自行浅读（只列文件名会让大目录下 codex 浅读几个文件就写，agents.md 理解不深）。
 - **可见性**：默认排除 `.git`、`.omo`（opencode 会话目录）、`node_modules`、`__pycache__`、`dist/`、`build/` 及 `.aimake` 自身（ignore 清单可配置：`.aimakeignore`）。
 - **init 语义（运行位置 ≠ 扫描目标）**：知识根 = 运行目录 `.aimake/`；扫描目标 = 显式指定的项目路径（`aimake init <目标>`）或全部可见子项目——**绝不扫描整个运行目录**。
 - **内容分级（大项目策略）**：低复杂度目录（<10 文件、无子目录）生成**轻量 agents.md**（SUMMARY 级），高复杂度目录才全 schema；提示词要求同级目录差异化摘要。
+  - **超大规模（Linux 内核级，3-4 万节点）演进**：全量 init 不现实（3-4 万次 LLM 调用）→ ① 按需子树 `init <子路径>` 分批；② 深度限制 `--depth`；③ 同构叶子目录聚合到父级不单独建节点。
 - **子树分批 init**：大项目可 `aimake init <子路径>` 分阶段生成，成本分散到多个时间段。
 
 ### 更新机制（三通道，全部显式触发；与 owner/QA/消费协议/任务层咬合成闭环）
@@ -96,7 +98,8 @@
 
 - **侦查路线**：问题 → 根 agents.md 的 WHERE TO LOOK 路由表 → 目录 agents.md → 源码指针 → 代码本身。链路末端永远可跳到**真实源码**——最坏情况读到代码，而代码永远是对的。
 - **查询协议（问谁）**：目录内问题 → 本 owner 内部解决（QA 命中）；已记录依赖 → 沿 DEPENDS 读被依赖方 owner（**查询经由 owner，不直接扫原始文件**）；全局问题/模糊关联 → 回溯根（全局索引/契约）定位后直达。**答案必须可溯源**：标注来自哪个 agents.md 的哪个条目。
-- **问答形式（命中即答，未命中即导）**：`aimake ask` 确定性匹配 QA 条目/索引 → 命中即返回「摘要答案 + 证据指针」（零上下文噪声）；未命中 → 退回导航（索引定位 → 读候选 owner）→ 仍无 → **系统性否定**（覆盖检查通过 = 核实过的"没有"，防幻觉，不是猜测）。
+- **问答形式（命中即答，未命中即导）**：`aimake ask` 确定性匹配 QA 条目/索引 → 命中即返回「摘要答案 + 证据指针」（零上下文噪声）；未命中 → **源码级候选**（全树 KEY SYMBOLS/FILES 关键词匹配，Top N 截断防噪音）→ 仍未命中 → 明确「**知识树未覆盖此问题**」+ 建议读候选源码/写反馈补 QA——**不得声称"核实过的没有"**（知识库未覆盖 ≠ 项目里没有；系统性否定只在源码级覆盖检查后成立）。
+  - 大项目（千级节点）：运行时扫全树零 token（<200ms）；Linux 级（3-4 万节点）：须**符号倒排索引物化**（ctags 式，init/update 构建 `.aimake/symbols.idx`，ask 查索引毫秒级）。
 - **全局索引与向下查找**：根节点的 WHERE TO LOOK 捷径表 = 全局索引的正式化（`aimake tree` 输出其物化文本）。模糊关联问题先读捷径表（一个文件）定位候选，不逐层试探；搜索可挪出上下文（CLI 过滤零 token），只把候选带进上下文。逐层下钻时每层摘要即索引条目，成本 = O(展开的匹配路径)，不是 O(整棵树)。
 - **跨目录契约**：全局横切知识（全局配置、认证、数据流协议）在根 agents.md 由模型从全局视角捕获，不依赖任何单目录的 import——多目录协作问题（如 api/caller/hacker 三层）的导航入口。
 - **消费走法规则**：下钻/回溯（树边）✅；依赖边跳转（依赖者→被依赖者，单向）✅；捷径边直达（问题→节点，**只从根出发**）✅；查询经由 owner ✅；文件级跨目录平跳 ❌；项目外知识无节点可跳，靠模型能力 + EXTERNAL 小节；**动态 agent 间互相"问"（codex exec 嵌套调用）❌——静态读文件是唯一合法的"问"**。捷径边不过期（它只指路，目标过期由目标 .meta 判断；根重生成时表自动刷新）。
@@ -106,7 +109,7 @@
 - **会话启动**：新会话先读根 agents.md（方向）+ tasks.md（任务上下文）→ 建立方向。
 - **知识发现**：若项目根有 `.aimake-link`（一行"知识路径: ../.aimake/<项目名>"）→ 按指针去知识根；无则按约定"项目知识在父目录 `.aimake/<项目名>/`"。
 - **消费前**：核对 `.meta` 指纹——过期则提示/触发 `update`。
-- **消费中**：按"查询协议"行走；换"读"不换会话（加载上下文），换"活"才换会话（tasks.md 交接）。
+- **消费中**：按"查询协议"行走；换"读"不换会话（加载上下文），换"活"才换会话（tasks.md 交接）。**ask 未命中 ≠ 答案不存在**——沿源码级候选指针继续导航到真实代码，不得以"ask 说没有"为由停止（承诺可达的底线）。
 - **消费后**：发现知识错误 → 写事实性反馈到 `.aimake/feedback/`；任务完成 → 更新 tasks.md。
 
 ### 双层结构（知识层 + 任务层）
@@ -252,6 +255,14 @@ mkdir -p bin && mv main.bin bin/aimake.bin
 - 消费侧成本 > 生成侧成本（每次会话都会发生）：DEPENDS / SUB-KNOWLEDGE / QA 必须保持"指针 + 摘要"形态，按需加载。
 - 反馈驱动更新的软肋：消费方 AI 需要自觉写反馈——写进消费协议，不强制；不写反馈知识树仍可用，纠错靠人工 update。
 - Termux 环境：Nuitka 需 `pkg install patchelf ccache binutils ldd termux-elf-cleaner`，版本 ≥ 2.6.7（此前有 libpython 链接 bug）。注意：Termux 的 glibc 包装在 `$PREFIX/glibc/bin`（patchelf/ldd 需加 PATH）；无静态 libpython → 编译产物依赖 libpython3.14.so，需 `LD_LIBRARY_PATH=$PREFIX/lib` 运行（`bin/aimake` 启动器已封装）。
+- **引擎沙箱**：aimake 引擎参数保持最小，沙箱策略**继承用户的 codex 配置**（`~/.codex/config.toml`）——**勿在 aimake.json 硬编码 `--sandbox`**。Termux/Android 无用户命名空间，bubblewrap 沙箱不可用，`sandbox_mode = "danger-full-access"` 是唯一可行配置；显式 `--sandbox workspace-write` 会覆盖 config 并在 Android 上触发沙箱机制报错。aimake 用 stdout 协议（引擎只输出文本，aimake 写文件），天然不受沙箱写权限影响。
+- **codex 配置指南（引擎侧全部继承 `~/.codex/config.toml`，aimake.json 只管 command）**：
+  - 认证：`codex login`（写 `~/.codex/auth.json`）或 config 里 `preferred_auth_method = "apikey"` + provider 的 `experimental_bearer_token = "<key>"`（**key 只存本地，勿提交 git**）
+  - 模型：`model = "<模型名>"` + `model_provider = "<provider>"`；第三方（DeepSeek 等）在 `[model_providers.<名>]` 配 `base_url` / `wire_api` / `experimental_bearer_token`
+  - 审批：aimake 用 `codex exec --full-auto`（`-f` 跳过审批），无需 approval 交互配置
+  - Termux 网络规避：`check_for_update_on_startup = false`（不可达时跳过版本检查）；`[features] plugins = false`（禁用插件系统防启动挂起）
+  - 项目信任：`[projects."<路径>"] trust_level = "trusted"`（codex 信任项目目录）
+  - 原则：aimake 的 `engine.command` 保持最小（`["codex", "exec", "--full-auto"]`），模型/认证/沙箱/网络全部由 config.toml 决定
 - 测试：`python3 -m unittest discover tests`（零依赖，12 用例覆盖四道闸）。
 
 ---

@@ -26,6 +26,7 @@ class NodeContext:
 
     rel: str  # 相对知识根的路径（"" 为根）
     files: list[str] = field(default_factory=list)
+    file_contents: list[tuple[str, str]] = field(default_factory=list)  # (文件名, 内容截断)
     child_summaries: list[tuple[str, str]] = field(default_factory=list)  # (子目录名, 一句话)
     dep_candidates: list[str] = field(default_factory=list)  # 纯目录名
 
@@ -85,15 +86,21 @@ def build_prompt_budgeted(
     if estimate_chars(prompt) <= budget:
         return prompt, False
 
-    # ① 子级摘要只留名字（保留依赖候选）
+    # ① 丢弃文件内容（保留文件名清单）——内容注入是理解深度的增益，超预算先牺牲
+    ctx0 = replace(ctx, file_contents=[])
+    p0 = build_prompt(ctx0, tier, is_root)
+    if estimate_chars(p0) <= budget:
+        return p0, True
+
+    # ② 子级摘要只留名字（保留依赖候选）
     ctx1 = replace(
-        ctx, child_summaries=[(name, "") for name, _ in ctx.child_summaries]
+        ctx0, child_summaries=[(name, "") for name, _ in ctx0.child_summaries]
     )
     p1 = build_prompt(ctx1, tier, is_root)
     if estimate_chars(p1) <= budget:
         return p1, True
 
-    # ② 文件清单截断（保留前 50）
+    # ③ 文件清单截断（保留前 50）
     max_files = 50
     if len(ctx1.files) > max_files:
         ctx2 = replace(ctx1, files=ctx1.files[:max_files])
@@ -101,7 +108,7 @@ def build_prompt_budgeted(
         if estimate_chars(p2) <= budget:
             return p2, True
 
-    # ③ 降为轻量档（SUMMARY 级，文件清单也截断）
+    # ④ 降为轻量档（SUMMARY 级，文件清单也截断）
     ctx3 = replace(ctx1, files=ctx1.files[:max_files])
     p3 = _build_light(ctx3)
     return p3, True
@@ -112,6 +119,13 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
         [f"{name}：{summary}" for name, summary in ctx.child_summaries]
     )
     deps_lines = _bullet(ctx.dep_candidates)
+    content_lines = "\n".join(
+        f"### {name}\n{body}" for name, body in ctx.file_contents
+    )
+    content_block = (
+        f"\n# 本目录文件内容（供深入理解——必须基于真实代码撰写，禁止臆测）\n{content_lines}\n"
+        if ctx.file_contents else ""
+    )
     root_extra = ""
     if is_root:
         root_extra = """
@@ -127,7 +141,7 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
 
 # 本目录可见文件
 {_bullet(ctx.files)}
-
+{content_block}
 # 子目录摘要（子级 agents.md 的 OVERVIEW，供 SUB-KNOWLEDGE 引用）
 {child_lines}
 
@@ -136,13 +150,13 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
 
 # 输出要求：严格按以下 schema 生成，内容一律中文，小节标题保持英文协议键
 # agents.md — {ctx.rel} 的知识边界
-## OVERVIEW            ← 这个目录是干嘛的（1-2 句）
-## SUB-KNOWLEDGE       ← 每个子目录一行（一句摘要 + 相对路径）
+## OVERVIEW            ← 职责 + 边界 + 与谁协作（1-3 句，不是只写"是什么"）
+## SUB-KNOWLEDGE       ← 每个子目录一行（一句摘要 + 相对路径；同级差异化）
 ## DEPENDS             ← 依赖知识（使用方视角：「我用了 xxx 的 xxx 能力」；项目内指针 + 项目外标注）
-## FILES               ← 本目录可见文件清单与职责
-## WHERE TO LOOK       ← 任务→位置 路由表（3-8 条高频任务）
+## FILES               ← 每个文件：职责 + 关键接口/导出（基于注入的文件内容，不要只列名字）
+## WHERE TO LOOK       ← 任务→位置 路由表（3-8 条高频任务：增删改查/配置/调试/构建）
 ## QA                  ← 高频问答 3-5 条（问题 + 摘要答案 + 证据指针）
-## KEY SYMBOLS         ← 核心符号（符号名 + 位置 + 一句作用）
+## KEY SYMBOLS         ← 核心导出 + 被引用最多的符号（符号名 + 位置 + 一句作用；不是罗列全部）
 ## COMMANDS            ← 构建/测试命令
 ## ANTI-PATTERNS       ← 本目录特有禁忌
 ## EXTERNAL            ← 外部参考链接 + 知识时效性标注
@@ -152,7 +166,8 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
 2. DEPENDS 用使用方视角；候选名单用于确认，只列真实依赖。
 3. 答案必须可溯源：QA / KEY SYMBOLS 都给源码路径或行号。
 4. 同级目录差异化：若与前序目录职责重复，指出差异点即可。
-5. 只输出 agents.md 文件内容本身，不要任何解释。"""
+5. **先通读注入的文件内容再写**——OVERVIEW/FILES/KEY SYMBOLS 必须基于真实代码，禁止仅凭文件名臆测。
+6. 只输出 agents.md 文件内容本身，不要任何解释。"""
 
 
 def _build_light(ctx: NodeContext) -> str:
