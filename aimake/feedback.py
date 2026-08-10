@@ -89,7 +89,8 @@ def parse_feedback(path: Path) -> Feedback | None:
         elif key == "报告方":
             fb.reporter = value
         elif key == "目标目录":
-            fb.target = value
+            # 归一化：写入端用 "根" 表示根节点，解析端还原为 ""（与 node_plan 键一致）
+            fb.target = "" if value == "根" else value
         elif key == "来源":
             if cur:
                 fb.entries.append(cur)
