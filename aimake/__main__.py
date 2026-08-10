@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from .config import DEFAULT_IGNORES, IGNORE_FILE, load_ignore_patterns
 from .engine import load_budget, load_engine_config, write_default_config
 from .feedback import list_feedback
 from .graph import build_knowledge_graph
@@ -992,6 +993,72 @@ def cmd_maintain(args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_ignore(args: argparse.Namespace) -> int:
+    """ignore：CLI 管理 .aimakeignore（add/remove/list/reset）。"""
+    cwd = Path.cwd()
+    target = Path(args.project).resolve() if args.project else cwd
+    if not target.is_dir():
+        print(f"错误：不是目录：{target}", file=sys.stderr)
+        return 1
+    ignore_file = target / IGNORE_FILE
+
+    if args.action == "list":
+        print(f"默认忽略（内置）：{'、'.join(DEFAULT_IGNORES)}")
+        print(f"自定义（{ignore_file}）：")
+        if ignore_file.is_file():
+            for raw in ignore_file.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if line:
+                    print(f"  {line}")
+        else:
+            print("  （无）")
+        return 0
+
+    if args.action == "reset":
+        if ignore_file.exists():
+            ignore_file.unlink()
+            print(f"已清空自定义忽略（{ignore_file}）")
+        else:
+            print("无自定义忽略文件，无需重置")
+        return 0
+
+    pattern = args.pattern
+    if not pattern:
+        print("错误：add/remove 需要规则参数（如：aimake ignore add .omo/）", file=sys.stderr)
+        return 1
+
+    existing: list[str] = []
+    if ignore_file.is_file():
+        existing = ignore_file.read_text(encoding="utf-8").splitlines()
+    cleaned = [ln for ln in existing if ln.strip() and not ln.strip().startswith("#")]
+    stripped = {ln.strip() for ln in cleaned}
+
+    if args.action == "add":
+        if pattern in stripped:
+            print(f"已存在：{pattern}")
+            return 0
+        ignore_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(ignore_file, "a", encoding="utf-8") as f:
+            if existing and existing[-1].strip():
+                f.write("\n")
+            f.write(pattern + "\n")
+        print(f"已添加：{pattern}（下次 init/update/scan 生效）")
+        return 0
+
+    if args.action == "remove":
+        if pattern not in stripped:
+            print(f"未找到：{pattern}")
+            return 1
+        remaining = [ln for ln in existing
+                     if ln.strip() and ln.strip() != pattern]
+        ignore_file.write_text("\n".join(remaining) + "\n", encoding="utf-8")
+        print(f"已移除：{pattern}")
+        return 0
+
+    print(f"未知操作：{args.action}", file=sys.stderr)
+    return 1
+
+
 def cmd_not_implemented(name: str) -> int:
     print(f"{name}：尚未实现（规划中，见 plan.md / task.md）")
     return 1
@@ -1056,6 +1123,14 @@ def main(argv: list[str] | None = None) -> int:
     p_maintain.add_argument("--retries", type=int, default=2, help="失败重试次数（默认 2）")
     p_maintain.add_argument("--budget", type=int, default=None, help="每节点提示词预算（字符，超预算降级；0=不限制）")
     p_maintain.set_defaults(func=cmd_maintain)
+
+    p_ignore = sub.add_parser("ignore", help="CLI 管理忽略规则（.aimakeignore）")
+    p_ignore.add_argument("action", choices=["add", "remove", "list", "reset"],
+                          help="add=添加规则 / remove=移除 / list=查看 / reset=清空自定义")
+    p_ignore.add_argument("pattern", nargs="?", default=None,
+                          help="规则（add/remove 用，如 .omo/ 或 *.log）")
+    p_ignore.add_argument("--project", default=None, help="目标项目（默认当前目录）")
+    p_ignore.set_defaults(func=cmd_ignore)
 
     args = parser.parse_args(argv)
     return args.func(args)

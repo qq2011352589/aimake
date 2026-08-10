@@ -70,6 +70,7 @@ aimake tree [目标]                              # 知识树总览（全局索�
 aimake ask "问题" [目标]                         # QA 命中即答（带来源）/ 捷径导航 / 系统性否定
 aimake scaffold "一句话" [--out 目录] [--default]  # 从描述生成项目：提案→确认→源码→骨架→自动 init
 aimake maintain [目标]                             # 一键维护：状态检查→指纹更新→反馈处理→报告
+aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（add/remove/list/reset）
 ```
 
 **引擎配置**（`.aimake/aimake.json`，任意 AI CLI 可接入——Makefile 里的 cc）：
