@@ -53,20 +53,28 @@ def extract_overview(agents_md_text: str) -> str:
     return ""
 
 
-def build_prompt(ctx: NodeContext, tier: str = "") -> str:
-    """构造生成提示词。tier 缺省时按内容分级自动判定。"""
+def build_prompt(ctx: NodeContext, tier: str = "", is_root: bool = False) -> str:
+    """构造生成提示词。tier 缺省时按内容分级自动判定；is_root 加全局增强要求。"""
     if not tier:
         tier = decide_tier(len(ctx.files), len(ctx.child_summaries))
     if tier == TIER_LIGHT:
         return _build_light(ctx)
-    return _build_full(ctx)
+    return _build_full(ctx, is_root=is_root)
 
 
-def _build_full(ctx: NodeContext) -> str:
+def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
     child_lines = _bullet(
         [f"{name}：{summary}" for name, summary in ctx.child_summaries]
     )
     deps_lines = _bullet(ctx.dep_candidates)
+    root_extra = ""
+    if is_root:
+        root_extra = """
+# 全局增强要求（根节点特有）：
+- 将 WHERE TO LOOK 升级为【全局捷径表】：5-15 条「问题模式 → 目标节点」语义路由（如「性能问题 → 相关目录」「配置格式 → config/」「API 差异 → 项目外 EXTERNAL」），供模糊问题一跳直达。
+- 捕获【跨目录契约】：全局横切知识（全局配置、认证、数据流协议、跨模块调用链如 api/caller/hacker 三层）——不依赖任何单目录的 import。
+- SUB-KNOWLEDGE 对子目录给出差异化一句话摘要；职责重复的指出差异点。
+"""
     return f"""你正在为一个代码目录生成 AI 知识文档（agents.md）。这是知识导航仪不是答案本——承诺「可达」，不承诺「已知」：细节一律指向源码位置，不复制实现。
 
 # 目标目录
@@ -93,7 +101,7 @@ def _build_full(ctx: NodeContext) -> str:
 ## COMMANDS            ← 构建/测试命令
 ## ANTI-PATTERNS       ← 本目录特有禁忌
 ## EXTERNAL            ← 外部参考链接 + 知识时效性标注
-
+{root_extra}
 规则：
 1. 只写目标目录边界内的知识；子目录细节只写摘要，不展开。
 2. DEPENDS 用使用方视角；候选名单用于确认，只列真实依赖。

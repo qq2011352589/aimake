@@ -90,20 +90,39 @@ def _run_with_retry(
 
 
 def _mock_output(prompt: str) -> str:
-    """mock 引擎：从提示词解析目标目录，返回确定性占位 agents.md。"""
-    rel = ""
-    capture = False
-    for line in prompt.splitlines():
-        if line.strip() == "# 目标目录":
-            capture = True
-            continue
-        if capture and line.strip():
-            rel = line.strip()
-            break
+    """mock 引擎：回显提示词中注入的上下文，产出可验证的 agents.md。"""
+    rel = _section(prompt, "# 目标目录")
+    rel = rel[0] if rel else ""
+    children = _section(prompt, "# 子目录摘要")
+    deps = _section(prompt, "# 依赖候选名单")
+    child_block = "\n".join(f"- {c}" for c in children) if children else "- （无子目录）"
+    deps_block = "\n".join(f"- {d}" for d in deps) if deps else "- （无）"
+    root_block = ""
+    if rel == ".":  # 根节点：mock 占位全局捷径表
+        root_block = (
+            "## WHERE TO LOOK\n"
+            "- （mock：全局捷径表占位——真实生成由模型从全局视角写入）\n"
+        )
     return (
         f"# agents.md — {rel} 的知识边界\n"
         "## OVERVIEW\n"
         "（mock 引擎占位——本目录职责摘要，真实生成由配置的 AI 引擎完成）\n"
+        f"## SUB-KNOWLEDGE\n{child_block}\n"
+        f"## DEPENDS\n{deps_block}\n"
+        f"{root_block}"
         "## FILES\n"
         "- （mock：见目录实际文件）\n"
     )
+
+
+def _section(prompt: str, header: str) -> list[str]:
+    """取提示词中某个 # 节的内容行（去掉前导 -，直到下一个 # 节）。"""
+    out: list[str] = []
+    in_section = False
+    for line in prompt.splitlines():
+        if line.startswith("# "):
+            in_section = line.strip().startswith(header)
+            continue
+        if in_section and line.strip():
+            out.append(line.strip().lstrip("- "))
+    return out

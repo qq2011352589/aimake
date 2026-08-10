@@ -1,15 +1,16 @@
-"""aimake CLI 入口（T5：scan / init 骨架可验收，其余规划中）。"""
+"""aimake CLI 入口（T9：scan / init 可验收，其余规划中）。"""
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from .engine import load_engine_config, write_default_config
 from .graph import build_knowledge_graph
-from .prompt import TIER_LIGHT, NodeContext, build_prompt, decide_tier
-from .runner import run_nodes
+from .prompt import TIER_LIGHT, NodeContext, build_prompt, decide_tier, extract_overview
+from .runner import GenResult, run_nodes
 from .skeleton import create_skeleton, mirror_prefix, resolve_knowledge_root
 from .walk import walk_project
 
@@ -41,8 +42,35 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _collect_waves(topo_order: list) -> list[list]:
+    """按"距叶子高度"分组波浪：叶子（0）→ 根；同层节点互相独立可并行。"""
+    height: dict[str, int] = {}
+    for node in topo_order:  # 后序：子级高度已算好
+        if not node.children:
+            height[node.rel] = 0
+        else:
+            height[node.rel] = max(height[c.rel] + 1 for c in node.children)
+    waves: dict[int, list] = {}
+    for node in topo_order:
+        waves.setdefault(height[node.rel], []).append(node)
+    return [waves[h] for h in sorted(waves)]  # 叶子高度 0 先生成
+
+
+def _collect_child_summaries(node, prefix: Path) -> list[tuple[str, str]]:
+    """父级聚合：读子级已生成的 agents.md 提取 OVERVIEW 一句话。"""
+    summaries: list[tuple[str, str]] = []
+    for child in node.children:
+        md = prefix / child.rel / "agents.md"
+        if md.is_file():
+            ov = extract_overview(md.read_text(encoding="utf-8"))
+            summaries.append((child.path.name, ov or "（无摘要）"))
+        else:
+            summaries.append((child.path.name, "（未生成）"))
+    return summaries
+
+
 def cmd_init(args: argparse.Namespace) -> int:
-    """init：知识根镜像骨架 + .meta + 叶子并行生成（父级待 T8）。"""
+    """init：骨架 + .meta + 分层波浪生成（叶子 → 父级 → 根）。"""
     cwd = Path.cwd()
     target = Path(args.target).resolve() if args.target else cwd
     if not target.is_dir():
@@ -60,57 +88,70 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"知识根：{knowledge_root}")
     print(f"扫描目标：{target}")
     print(f"引擎：{engine.name}（command={engine.command or '内置'}）")
-    print(f"镜像骨架目录：{len(graph.nodes)}")
-
-    # 生成计划
-    plan: list[tuple[str, str, Path, Path]] = []  # (rel, prompt, cwd, mirror)
-    for node in graph.topo_order():
-        mirror = prefix / node.rel if node.rel else prefix
-        files = result.files.get(node.path, [])
-        tier = decide_tier(len(files), len(node.children))
-        ctx = NodeContext(
-            rel=node.rel,
-            files=files,
-            dep_candidates=node.dep_candidates,
-        )
-        prompt = build_prompt(ctx, tier)
-        plan.append((node.rel, prompt, node.path, mirror))
+    print(f"节点总数：{len(graph.nodes)}")
 
     if args.dry_run:
         print("\n== 生成计划（dry-run）==")
-        for rel, _, _, mirror in plan:
-            node = graph.nodes[rel]
-            tier = decide_tier(
-                len(result.files.get(node.path, [])), len(node.children)
-            )
-            tag = "轻量" if tier == TIER_LIGHT else "全量"
-            print(f"  [{tag}] {mirror.relative_to(cwd)}/agents.md")
+        for wave in _collect_waves(graph.topo_order()):
+            for node in wave:
+                mirror = prefix / node.rel if node.rel else prefix
+                tier = decide_tier(
+                    len(result.files.get(node.path, [])), len(node.children)
+                )
+                tag = "轻量" if tier == TIER_LIGHT else "全量"
+                print(f"  [{tag}] {mirror.relative_to(cwd)}/agents.md")
         return 0
 
-    # 执行：T7 只跑叶子节点，父级标记待补
-    leaves = [p for p in plan if graph.nodes[p[0]].is_leaf]
-    print(f"\n== 叶子节点并行生成（{len(leaves)} 个，并发 {args.concurrency}）==")
-    gen = run_nodes(
-        [(rel, prompt, cwd) for rel, prompt, cwd, _ in leaves],
-        engine,
-        concurrency=args.concurrency,
-        retries=args.retries,
-    )
+    # 分层波浪生成
+    waves = _collect_waves(graph.topo_order())
+    total_ok = 0
+    failed: list[GenResult] = []
+    print(f"\n== 分层生成（{len(waves)} 层，并发 {args.concurrency}）==")
+    for wi, wave in enumerate(waves, 1):
+        plan: list[tuple[str, str, Path, Path]] = []
+        for node in wave:
+            mirror = prefix / node.rel if node.rel else prefix
+            files = result.files.get(node.path, [])
+            child_summaries = _collect_child_summaries(node, prefix)
+            tier = decide_tier(len(files), len(node.children))
+            ctx = NodeContext(
+                rel=node.rel or ".",
+                files=files,
+                child_summaries=child_summaries,
+                dep_candidates=node.dep_candidates,
+            )
+            # T9：根节点（rel=""）加全局增强要求（跨目录契约 + 全局捷径表）
+            plan.append(
+                (node.rel, build_prompt(ctx, tier, is_root=node.rel == ""),
+                 node.path, mirror)
+            )
 
-    # 写成功者产物
-    mirror_map = {rel: mirror for rel, _, _, mirror in leaves}
-    ok_count = 0
-    for r in gen:
-        if r.ok:
-            (mirror_map[r.rel] / "agents.md").write_text(r.output, encoding="utf-8")
-            ok_count += 1
-    failed = [r for r in gen if not r.ok]
+        gen = run_nodes(
+            [(rel, prompt, cwd_) for rel, prompt, cwd_, _ in plan],
+            engine,
+            concurrency=args.concurrency,
+            retries=args.retries,
+        )
+        mirror_map = {rel: mirror for rel, _, _, mirror in plan}
+        for r in gen:
+            if r.ok:
+                (mirror_map[r.rel] / "agents.md").write_text(r.output, encoding="utf-8")
+                total_ok += 1
+            else:
+                failed.append(r)
+        print(f"  层 {wi}: 成功 {sum(1 for r in gen if r.ok)}/{len(gen)}")
 
-    print(f"成功：{ok_count} ｜ 失败：{len(failed)} ｜ 父级待补：{len(plan) - len(leaves)}")
+    print(f"\n成功：{total_ok}/{len(graph.nodes)} ｜ 失败：{len(failed)}")
     for r in failed:
         print(f"  [失败] {r.rel}：{r.error}")
-    print("\n提示：父级节点（SUB-KNOWLEDGE 聚合）将在 T8 实现；"
-          f"失败节点可用 `aimake update {args.target or '.'}` 重试（T12 前暂未实现）。")
+
+    # T9：.aimake-link 消费发现指针（目标项目 ≠ 运行目录时）
+    if target != cwd:
+        link = target / ".aimake-link"
+        rel = os.path.relpath(prefix, target)
+        link.write_text(f"知识路径: {rel}\n", encoding="utf-8")
+        print(f".aimake-link：{link.relative_to(cwd)} -> {rel}")
+
     return 0 if not failed else 1
 
 
