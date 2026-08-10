@@ -2,7 +2,7 @@
 
 > 基于 `codex exec` / `opencode run` 的分层 AI 知识库生成器——为任意项目在知识根（运行目录 `.aimake/`）递归生成镜像式的 agents.md 分层知识树与知识链路。
 
-**状态：全部里程碑完成（M1-M5 ✅，9 命令已实现）**（详见 [plan.md](plan.md) / [task.md](task.md)）
+**状态：全部里程碑完成（M1-M5 ✅，10 命令已实现）**（详见 [plan.md](plan.md) / [task.md](task.md)）
 
 ## 它解决什么问题
 
@@ -69,6 +69,7 @@ aimake status [目标]                            # 过期清单 / 反馈队列�
 aimake tree [目标]                              # 知识树总览（全局索引物化 + 捷径表）
 aimake ask "问题" [目标]                         # QA 命中即答（带来源）/ 捷径导航 / 系统性否定
 aimake scaffold "一句话" [--out 目录] [--default]  # 从描述生成项目：提案→确认→源码→骨架→自动 init
+aimake maintain [目标]                             # 一键维护：状态检查→指纹更新→反馈处理→报告
 ```
 
 **引擎配置**（`.aimake/aimake.json`，任意 AI CLI 可接入——Makefile 里的 cc）：
@@ -98,7 +99,7 @@ aimake scaffold "一句话" [--out 目录] [--default]  # 从描述生成项目�
 
 ```
 aimake/
-├── aimake/           # Python 包（CLI 入口 + 11 个模块）
+├── aimake/           # Python 包（CLI 入口 + 12 个模块）
 │   ├── __main__.py   # CLI：scan/init/update/status/tree/ask 已实现
 │   ├── config.py     # ignore 规则（默认 6 项 + .aimakeignore + fnmatch）
 │   ├── walk.py       # 目录遍历（followlinks=False + 剪枝）

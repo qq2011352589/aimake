@@ -100,6 +100,7 @@
 | 2026-08-10 | #T24 | Nuitka 编译完成：main.py 入口 + --standalone --onefile → bin/aimake.bin（3.6M）；glibc PATH 补 patchelf；启动器 bin/aimake 内置 LD_LIBRARY_PATH 解决 libpython 链接；mock 全链路验证通过 |
 | 2026-08-10 | #T25 | 文档完善完成：README 重写（快速开始/CLI 用法/消费协议/目录结构/测试）+ AGENTS.md 构建命令与 Termux 坑更新；CLI 参数逐一核对一致 |
 | 2026-08-10 | #T26-#T31 | M5 scaffold 完成：一句话→提案→确认（--default）→按目录生成源码（manifest 解析）→骨架四件套→自动 init（知识树同生）；自举闭环验证（status/update 幂等/ask）；mock 全链路通过 |
+| 2026-08-10 | 追加 | 真实引擎（codex exec/DeepSeek v4 flash）自举验证 4/4 节点真实生成；修复 Bug1（反馈根节点 round-trip：'根'↔'' 归一化，防 node_plan KeyError）+ Bug2（KEY SYMBOLS 表格分隔行误报，自检跳过表头/分隔行）；新增 maintain 一键维护命令（检查→指纹更新→反馈处理→报告）；回归测试 15/15 |
 
 ---
 

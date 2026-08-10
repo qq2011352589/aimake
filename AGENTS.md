@@ -1,7 +1,7 @@
 # AGENTS.md — 项目知识库
 
 > 本文档为 AI 代理（或协作者）提供在本仓库中工作的必要上下文。
-> 创建时间：2026-08-10 ｜ 更新：2026-08-10 ｜ 状态：**M1 实施中（scan 已可用）**
+> 创建时间：2026-08-10 ｜ 更新：2026-08-10 ｜ 状态：**全部里程碑完成（M1-M5 ✅，10 命令已实现）**
 
 ## OVERVIEW
 
@@ -116,7 +116,7 @@
 
 ### 产品形态
 
-- **CLI**：`scan`（扫描可见目录树，已实现）/ `init <目标>`（全树生成到知识根镜像，已实现）/ `update [路径]`（指纹驱动受影响子图重生成，已实现）/ `update --feedback`（反馈队列，已实现）/ `status`（过期清单 + 待处理反馈 + 符号自检，已实现）/ `tree`（知识树总览 = 全局索引物化，已实现）/ `ask`（QA 问答 + 捷径表匹配，命中即答，答案带来源，已实现）/ `scaffold "一句话"`（从描述生成项目骨架 + 自动 init，已实现）。
+- **CLI**：`scan`（扫描可见目录树，已实现）/ `init <目标>`（全树生成到知识根镜像，已实现）/ `update [路径]`（指纹驱动受影响子图重生成，已实现）/ `update --feedback`（反馈队列，已实现）/ `status`（过期清单 + 待处理反馈 + 符号自检，已实现）/ `tree`（知识树总览 = 全局索引物化，已实现）/ `ask`（QA 问答 + 捷径表匹配，命中即答，答案带来源，已实现）/ `scaffold "一句话"`（从描述生成项目骨架 + 自动 init，已实现）/ `maintain`（一键维护：检查→指纹更新→反馈处理→报告，已实现）。
 - **用户输入双层**：维护层 = 用户敲 CLI 命令；消费层 = 初始化后用户正常开发，AI 工具读 `.aimake` 知识树——**aimake 不拦截任何对话，是"生成一次、随时被消费"的知识底座**。
 - **实现心智模型（make 类比）**：aimake = 知识的 make——依赖图 + 增量构建（指纹）+ 并行 + dry-run；codex exec / opencode run 是 Makefile 里的 cc（可插拔引擎）。AI 输出**分流**：编译产物进文件系统、导航判断归消费方 AI、依赖修正进图（下一轮生效）、错误进反馈队列（见生成规则/更新机制）。
 - **init 流程**：① 确定知识根（运行目录 `.aimake/`）与扫描目标 → ② 扫描目标目录树 → ③ 建依赖图与调用计划 → ④ 创建知识根镜像骨架 + `.meta` → ⑤ 叶子节点并行调用 codex exec（内容分级）→ ⑥ 父级等子级完成后调用（注入子级摘要 + 依赖候选名单）→ ⑦ 根节点最后生成（聚合 + 跨目录契约 + 全局捷径表）→ ⑧ 写指纹 + 可选 `.aimake-link`，输出报告（知识树、调用次数、耗时）。
@@ -127,16 +127,17 @@
 ```
 aimake/
 ├── aimake/                           # Python 包（CLI 入口）
-│   ├── __main__.py                   # CLI：scan 已实现，其余规划中
+│   ├── __main__.py                   # CLI：10 命令全部实现
 │   ├── config.py                     # ignore 规则（默认 6 项 + .aimakeignore + fnmatch）
 │   ├── walk.py                       # 目录遍历（followlinks=False + 剪枝）
 │   ├── imports.py                    # import 静态扫描（多语言候选名单）
 │   ├── graph.py                      # 三类边知识图（树边 + 依赖候选 + 拓扑序）
 │   ├── meta.py                       # .meta 指纹（sha256 + 过期判定）
 │   ├── skeleton.py                   # 知识根镜像骨架创建
-│   ├── prompt.py                     # 生成提示词模板（全量/轻量两档 + 内容分级）
+│   ├── prompt.py                     # 提示词模板（全量/轻量 + 分级 + 预算降级 + 提案/源码）
 │   ├── engine.py                     # 生成引擎抽象（通用接口 + codex/opencode 预置 + 配置）
-│   └── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock）
+│   ├── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock）
+│   └── feedback.py                   # 反馈文件（格式/解析/写入/四方确认）
 ├── .aimake/                          # 自举：aimake 自身的知识（init 产物，待生成）
 ├── AGENTS.md                         # 本文档
 ├── plan.md                           # 项目计划
@@ -151,7 +152,7 @@ aimake/
 | 项目计划 | plan.md | 目标/里程碑/阶段 |
 | 任务清单 | task.md | 任务拆分与状态 |
 | 产品设计 | 本文档「核心设计」 | 多轮讨论沉淀的完整设计 |
-| CLI 入口 | aimake/__main__.py | 命令分发（scan 已实现） |
+| CLI 入口 | aimake/__main__.py | 10 命令分发（scan/init/update/status/tree/ask/scaffold/maintain） |
 | ignore 规则 | aimake/config.py | 默认 6 项 + .aimakeignore + fnmatch 通配 |
 | 目录遍历 | aimake/walk.py | os.walk + 剪枝 + 可见目录树 |
 | import 扫描 | aimake/imports.py | 多语言 import 候选名单（纯目录名） |
@@ -161,6 +162,7 @@ aimake/
 | 提示词模板 | aimake/prompt.py | 十小节全量档 + SUMMARY 轻量档 + 内容分级 + OVERVIEW 提取 |
 | 引擎抽象 | aimake/engine.py | EngineSpec 通用接口 + codex/opencode 预置 + aimake.json 配置 |
 | 执行器 | aimake/runner.py | 并发池 + 超时 + 重试 + 失败标记 + mock 引擎 |
+| 反馈文件 | aimake/feedback.py | 事实性报告：格式/解析/写入/四方确认 |
 
 ## CODE MAP
 
@@ -180,11 +182,14 @@ aimake/
 | decide_tier / build_prompt / extract_overview | 函数 | aimake/prompt.py | 1 | 内容分级 / 提示词构造 / OVERVIEW 提取 |
 | EngineSpec / load_engine_config | 类/函数 | aimake/engine.py | 1 | 引擎规格 / 配置加载（预置 codex/opencode） |
 | run_nodes / run_engine | 函数 | aimake/runner.py | 1 | 并行生成 / 单次引擎调用（mock 支持） |
+| Feedback / parse_feedback / write_feedback | 类/函数 | aimake/feedback.py | 1 | 反馈报告 / 解析（根归一化）/ 写入 |
+| build_prompt_budgeted / build_proposal_prompt / build_source_prompt | 函数 | aimake/prompt.py | 1 | 预算降级 / 提案 / 源码清单提示词 |
+| _symbol_selfcheck / cmd_maintain / cmd_scaffold | 函数 | aimake/__main__.py | 1 | 符号自检（表格兼容）/ 一键维护 / 项目生成 |
 | main / cmd_scan / cmd_init | 函数 | aimake/__main__.py | 0 | CLI 分发 / scan / init（骨架+dry-run） |
 
 ## CONVENTIONS（提议，待定）
 
-- CLI 子命令：`init` / `update` / `status` / `tree` / `ask`。
+- CLI 子命令（全部已实现）：`scan` / `init` / `update(--feedback)` / `status` / `tree` / `ask` / `scaffold` / `maintain`。
 - ignore 规则集中管理，风格参考 `.gitignore`。
 - 目录遍历与子进程调用只用 Python 标准库，零第三方依赖（提议）。
 - **产物语言与格式（已定）**：生成的 agents.md 内容一律**中文**；知识文件后缀一律 `.md`。schema 小节标题为协议键（当前为英文键，供父级机器解析聚合），键名如需中文化必须全局一致迁移，防止解析断裂。
@@ -201,7 +206,7 @@ aimake/
 - 禁止修改被分析项目 A 的任何文件——aimake 只写 `.aimake/` 目录。
 - 禁止用主观评分驱动更新（"质量 2 分"不可验证）——反馈必须是事实性错误报告。
 
-## COMMANDS（规划中）
+## COMMANDS（已实现）
 
 ```bash
 # 扫描：可见目录树（ignore 规则生效，已实现）
@@ -222,6 +227,12 @@ python -m aimake tree
 
 # 问答：命中 QA 即答（答案带来源标注）
 python -m aimake ask "问题"
+
+# 项目生成：一句话 → 提案 → 确认 → 源码 → 骨架 → 自动 init
+python -m aimake scaffold "创建数学大厦" [--default]
+
+# 一键维护：状态检查 → 指纹更新 → 反馈处理 → 报告
+python -m aimake maintain [目标]
 
 # 构建（Nuitka → 独立可执行；Termux 需 glibc 工具链 PATH + LD_LIBRARY_PATH）
 export PATH="$PATH:$PREFIX/glibc/bin"   # patchelf/ldd 在 glibc 前缀
