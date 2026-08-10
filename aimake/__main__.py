@@ -598,8 +598,20 @@ def _symbol_selfcheck(graph, result, prefix: Path) -> list[tuple[str, str, str]]
 
         # KEY SYMBOLS：符号不在本目录可见文件 → 失效
         for line in _section_text(text, "KEY SYMBOLS"):
-            head = re.split(r"[：:\s]", line.lstrip("-").strip(), maxsplit=1)[0]
-            head = head.split("(")[0].strip()
+            s = line.lstrip("-").strip()
+            if not s:
+                continue
+            if s.startswith("|"):
+                # markdown 表格：取符号列（第 1 列）；表头/分隔行跳过
+                cells = [c.strip() for c in s.strip("|").split("|")]
+                if len(cells) < 3:
+                    continue
+                if set(cells[0]) <= set("-| :") or cells[0] in ("符号", "Symbol"):
+                    continue  # 分隔行或表头
+                head = cells[0]
+            else:
+                head = re.split(r"[：:\s]", s, maxsplit=1)[0]
+                head = head.split("(")[0].strip()
             if head and head not in blob:
                 issues.append((rel, "KEY SYMBOLS", head))
 
@@ -930,6 +942,54 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
     return _auto_init(out, engine, args)
 
 
+def cmd_maintain(args: argparse.Namespace) -> int:
+    """maintain：一键维护循环 = 状态检查 → 指纹更新 → 反馈处理 → 符号自检报告。"""
+    cwd = Path.cwd()
+    target = Path(args.target).resolve() if args.target else cwd
+    if not target.is_dir():
+        print(f"错误：不是目录：{target}", file=sys.stderr)
+        return 1
+
+    knowledge_root = resolve_knowledge_root(cwd)
+    prefix = mirror_prefix(knowledge_root, target, cwd)
+    result = walk_project(target)
+    graph = build_knowledge_graph(result)
+
+    # ① 检查（只读）
+    stale = sorted(
+        rel for rel, node in graph.nodes.items()
+        if is_stale(
+            node.path,
+            result.files.get(node.path, []),
+            prefix / rel / ".meta" if rel else prefix / ".meta",
+        )
+    )
+    groups = _feedback_groups(list_feedback(knowledge_root))
+    confirmed = [t for t, ok, _ in _feedback_decisions(groups) if ok]
+    issues = _symbol_selfcheck(graph, result, prefix)
+
+    print(f"维护检查：节点 {len(graph.nodes)} ｜ 过期 {len(stale)} ｜"
+          f" 确认反馈 {len(confirmed)} ｜ 符号失效 {len(issues)}")
+
+    code = 0
+    # ② 指纹更新
+    if stale:
+        print("\n== 指纹更新 ==")
+        code = max(code, _cmd_update_fingerprint(args))
+    # ③ 反馈处理
+    if confirmed:
+        print("\n== 反馈处理 ==")
+        code = max(code, cmd_update_feedback(args))
+    if not stale and not confirmed:
+        print("全部最新，无需更新。")
+    if issues:
+        print(f"\n== 符号自检：{len(issues)} 处失效（可写反馈走 update --feedback 纠错）==")
+        for rel, kind, item in issues[:10]:
+            print(f"  [{rel or '根'}] {kind} 失效: {item}")
+    print("\n维护完成。")
+    return code
+
+
 def cmd_not_implemented(name: str) -> int:
     print(f"{name}：尚未实现（规划中，见 plan.md / task.md）")
     return 1
@@ -986,6 +1046,14 @@ def main(argv: list[str] | None = None) -> int:
     p_scaffold.add_argument("--concurrency", type=int, default=4, help="并发上限（默认 4）")
     p_scaffold.add_argument("--retries", type=int, default=2, help="失败重试次数（默认 2）")
     p_scaffold.set_defaults(func=cmd_scaffold)
+
+    p_maintain = sub.add_parser("maintain", help="一键维护：状态检查 → 指纹更新 → 反馈处理 → 报告")
+    p_maintain.add_argument("target", nargs="?", default=None, help="扫描目标项目（默认当前目录）")
+    p_maintain.add_argument("--engine", default=None, help="生成引擎（默认读配置）")
+    p_maintain.add_argument("--concurrency", type=int, default=4, help="并发上限（默认 4）")
+    p_maintain.add_argument("--retries", type=int, default=2, help="失败重试次数（默认 2）")
+    p_maintain.add_argument("--budget", type=int, default=None, help="每节点提示词预算（字符，超预算降级；0=不限制）")
+    p_maintain.set_defaults(func=cmd_maintain)
 
     args = parser.parse_args(argv)
     return args.func(args)
