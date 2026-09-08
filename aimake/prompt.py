@@ -17,7 +17,25 @@ TIER_FULL = "full"
 SCHEMA_SECTIONS: tuple[str, ...] = (
     "OVERVIEW", "SUB-KNOWLEDGE", "DEPENDS", "FILES", "WHERE TO LOOK",
     "QA", "KEY SYMBOLS", "COMMANDS", "ANTI-PATTERNS", "EXTERNAL",
+    "HOW TO CONSUME",
 )
+
+# 根节点特有：消费协议（5 步，逐字输出——消费方 AI 的会话约定）
+HOW_TO_CONSUME_STEPS: tuple[str, ...] = (
+    "会话启动：先读根 agents.md（方向）+ 知识根 tasks.md（任务上下文）",
+    "知识发现：项目根有 .aimake-link 按指针去知识根；否则按约定「项目知识在父目录 .aimake/<项目名>/」",
+    "消费前：运行 aimake status 核对指纹——过期先 aimake update",
+    "消费中：查询经由 owner（读 agents.md，不直接扫目录）；沿树边/依赖边/捷径表跳转；换「读」不换会话",
+    "消费后：发现知识错误写事实性反馈到知识根 feedback/；任务完成更新 tasks.md",
+)
+
+
+def how_to_consume_block() -> str:
+    """根节点消费协议小节（## HOW TO CONSUME + 编号步骤）。"""
+    steps = "\n".join(
+        f"{i}. {step}" for i, step in enumerate(HOW_TO_CONSUME_STEPS, 1)
+    )
+    return f"## HOW TO CONSUME\n{steps}"
 
 
 @dataclass
@@ -59,7 +77,7 @@ def build_prompt(ctx: NodeContext, tier: str = "", is_root: bool = False) -> str
     if not tier:
         tier = decide_tier(len(ctx.files), len(ctx.child_summaries))
     if tier == TIER_LIGHT:
-        return _build_light(ctx)
+        return _build_light(ctx, is_root=is_root)
     return _build_full(ctx, is_root=is_root)
 
 
@@ -110,7 +128,7 @@ def build_prompt_budgeted(
 
     # ④ 降为轻量档（SUMMARY 级，文件清单也截断）
     ctx3 = replace(ctx1, files=ctx1.files[:max_files])
-    p3 = _build_light(ctx3)
+    p3 = _build_light(ctx3, is_root=is_root)
     return p3, True
 
 
@@ -128,11 +146,13 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
     )
     root_extra = ""
     if is_root:
-        root_extra = """
+        root_extra = f"""
 # 全局增强要求（根节点特有）：
 - 将 WHERE TO LOOK 升级为【全局捷径表】：5-15 条「问题模式 → 目标节点」语义路由（如「性能问题 → 相关目录」「配置格式 → config/」「API 差异 → 项目外 EXTERNAL」），供模糊问题一跳直达。
 - 捕获【跨目录契约】：全局横切知识（全局配置、认证、数据流协议、跨模块调用链如 api/caller/hacker 三层）——不依赖任何单目录的 import。
 - SUB-KNOWLEDGE 对子目录给出差异化一句话摘要；职责重复的指出差异点。
+- 必须包含 `## HOW TO CONSUME` 小节（根节点特有），逐字输出以下消费协议：
+{how_to_consume_block()}
 """
     return f"""你正在为一个代码目录生成 AI 知识文档（agents.md）。这是知识导航仪不是答案本——承诺「可达」，不承诺「已知」：细节一律指向源码位置，不复制实现。
 
@@ -170,7 +190,14 @@ def _build_full(ctx: NodeContext, is_root: bool = False) -> str:
 6. 只输出 agents.md 文件内容本身，不要任何解释。"""
 
 
-def _build_light(ctx: NodeContext) -> str:
+def _build_light(ctx: NodeContext, is_root: bool = False) -> str:
+    root_extra = ""
+    if is_root:
+        root_extra = f"""
+# 根节点特有要求：
+- 必须包含 `## HOW TO CONSUME` 小节，逐字输出以下消费协议：
+{how_to_consume_block()}
+"""
     return f"""你正在为一个代码目录生成轻量 AI 知识文档（agents.md）。只需要 SUMMARY 级内容。
 
 # 目标目录
@@ -183,7 +210,7 @@ def _build_light(ctx: NodeContext) -> str:
 # agents.md — {ctx.rel} 的知识边界
 ## OVERVIEW    ← 这个目录是干嘛的（1-2 句）
 ## FILES       ← 每文件一句话职责
-
+{root_extra}
 规则：内容中文；只输出 agents.md 文件内容本身，不要任何解释。"""
 
 

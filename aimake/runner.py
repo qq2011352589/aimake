@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .engine import EngineSpec
+from .prompt import how_to_consume_block
 
 
 @dataclass
@@ -123,10 +124,11 @@ def _mock_output(prompt: str) -> str:
     child_block = "\n".join(f"- {c}" for c in children) if children else "- （无子目录）"
     deps_block = "\n".join(f"- {d}" for d in deps) if deps else "- （无）"
     root_block = ""
-    if rel == ".":  # 根节点：mock 占位全局捷径表
+    if rel == ".":  # 根节点：mock 占位全局捷径表 + 消费协议
         root_block = (
             "## WHERE TO LOOK\n"
             "- （mock：全局捷径表占位——真实生成由模型从全局视角写入）\n"
+            f"{how_to_consume_block()}\n"
         )
     return (
         f"# agents.md — {rel} 的知识边界\n"
