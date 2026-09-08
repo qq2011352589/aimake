@@ -2,7 +2,7 @@
 
 > 基于 `codex exec` / `opencode run` 的分层 AI 知识库生成器——为任意项目在知识根（运行目录 `.aimake/`）递归生成镜像式的 agents.md 分层知识树与知识链路。
 
-**状态：全部里程碑完成（M1-M5 ✅，10 命令已实现）**（详见 [plan.md](plan.md) / [task.md](task.md)）
+**状态：全部里程碑完成（M1-M5 ✅，4 核心命令 + 冻结实验入口）**（详见 [plan.md](plan.md) / [task.md](task.md)）
 
 ## 它解决什么问题
 
@@ -23,12 +23,12 @@ aimake init project-a                              # 全树生成（自底向上
 
 # 消费（初始化后一切照旧，AI 工具读知识树）
 aimake tree project-a                              # 知识树总览（全局索引）
-aimake ask "driver 怎么配置" project-a              # QA 问答，命中即答（带来源）
+python -m aimake.experimental ask "driver 怎么配置" project-a   # QA 问答，命中即答（带来源，冻结实验）
 
 # 维护
 aimake status project-a                            # 过期清单 / 反馈队列 / 符号自检
 aimake update project-a                            # 指纹驱动重生成受影响子图
-aimake update --feedback project-a                 # 反馈驱动处理消费侧纠错队列
+python -m aimake.experimental update --feedback project-a       # 反馈驱动处理消费侧纠错队列（冻结实验）
 ```
 
 > 注意：运行目录 `.aimake/` 是知识根（在父目录运行即父级知识工作区，可共管多项目）；目标项目由参数显式指定，**绝不扫描整个运行目录**。
@@ -61,18 +61,25 @@ aimake update --feedback project-a                 # 反馈驱动处理消费侧
 ## CLI 用法（已实现）
 
 ```bash
-aimake scan [路径] [--deps]                    # 扫描可见目录树（ignore 规则生效）
+# 核心 4 命令
 aimake init [目标] [--engine E] [--concurrency N] [--retries N] [--budget N] [--dry-run]
-                                               # 全树生成：骨架+指纹+分层波浪+两阶段
-aimake update [目标] [--engine E] [--budget N]  # 指纹驱动重生成受影响子图
-aimake update --feedback [目标] [--engine E]    # 反馈驱动：四方确认→注入重生成→连锁
-aimake status [目标]                            # 过期清单 / 反馈队列详情 / 符号自检
-aimake tree [目标]                              # 知识树总览（全局索引物化 + 捷径表）
-aimake ask "问题" [目标]                         # QA 命中即答（带来源）/ 捷径导航 / 源码级候选
-aimake scaffold "一句话" [--out 目录] [--default]  # 从描述生成项目：提案→确认→源码→骨架→自动 init
-aimake maintain [目标]                             # 一键维护：状态检查→指纹更新→反馈处理→报告
-aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（add/remove/list/reset）
+aimake update [目标] [--engine E] [--budget N]      # 指纹驱动重生成受影响子图
+aimake status [目标]                                 # 过期清单 / 反馈队列 / 符号自检
+aimake tree [目标]                                   # 知识树总览（全局索引物化）
 ```
+
+实验入口（冻结，仅源码树可用，不编入 Nuitka 二进制）：
+
+```bash
+python -m aimake.experimental scan [路径] [--deps]
+python -m aimake.experimental update --feedback [目标]
+python -m aimake.experimental ask "问题" [目标]
+python -m aimake.experimental scaffold "一句话" [--out 目录] [--default]
+python -m aimake.experimental maintain [目标]
+python -m aimake.experimental ignore add .omo/ [--project 项目]
+```
+
+> 实验命令处于冻结状态（保留、不删除），仅从源码树可用。
 
 **引擎配置**（`.aimake/aimake.json`，任意 AI CLI 可接入——Makefile 里的 cc）：
 
@@ -88,6 +95,7 @@ aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（a
 ## 消费协议（AI 工具读取约定）
 
 - **会话启动**：先读根 `agents.md`（方向）+ 知识根 `tasks.md`（任务上下文）
+- **就地协议**：根 `agents.md` 现含 `## HOW TO CONSUME` 小节（5 步消费协议）——知识树自身教会 AI 如何消费它
 - **知识发现**：项目根有 `.aimake-link` 按指针去知识根；否则按约定"项目知识在父目录 `.aimake/<项目名>/`"
 - **消费前**：`aimake status` 核对指纹——过期先 `aimake update`
 - **消费中**：查询经由 owner（读 agents.md，不直接扫目录）；下钻/依赖边/捷径表跳转；换"读"不换会话
@@ -103,9 +111,9 @@ aimake ignore add .omo/ [--project 项目]          # CLI 管理忽略规则（a
 
 ```
 aimake/
-├── aimake/           # Python 包（CLI 入口 + 12 个模块）
-│   ├── __main__.py   # CLI：scan/init/update/status/tree/ask 已实现
-│   ├── config.py     # ignore 规则（默认 6 项 + .aimakeignore + fnmatch）
+├── aimake/           # Python 包（CLI 入口）
+│   ├── __main__.py   # CLI：核心 4 命令分发（init/update/status/tree）
+│   ├── config.py     # ignore 规则（默认 7 项 + .aimakeignore + fnmatch）
 │   ├── walk.py       # 目录遍历（followlinks=False + 剪枝）
 │   ├── imports.py    # import 静态扫描（7 语言依赖候选名单）
 │   ├── graph.py      # 三类边知识图 + 后序拓扑序
@@ -114,8 +122,9 @@ aimake/
 │   ├── prompt.py     # 提示词模板（全量/轻量 + 内容分级 + 预算降级）
 │   ├── engine.py     # 引擎抽象（codex/opencode 预置 + aimake.json 配置）
 │   ├── runner.py     # 执行器（并发/超时/重试/失败标记/mock）
+│   ├── experimental/ # 冻结实验入口（scan/ask/scaffold/maintain/ignore/update --feedback）
 │   └── feedback.py   # 反馈文件（格式/解析/写入/四方确认）
-├── tests/            # unittest 防风暴测试（12 用例）
+├── tests/            # unittest 防风暴测试（全部用例）
 ├── bin/              # Nuitka 编译产物（aimake 启动器 + aimake.bin）
 ├── main.py           # Nuitka 编译入口
 ├── AGENTS.md         # 项目知识库（核心设计沉淀）
@@ -127,7 +136,7 @@ aimake/
 ## 测试
 
 ```bash
-python3 -m unittest discover tests   # 12 用例：四道闸全覆盖
+python3 -m unittest discover tests   # 全部用例通过：四道闸全覆盖
 ```
 
 ## 许可证

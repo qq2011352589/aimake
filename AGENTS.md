@@ -1,7 +1,7 @@
 # AGENTS.md — 项目知识库
 
 > 本文档为 AI 代理（或协作者）提供在本仓库中工作的必要上下文。
-> 创建时间：2026-08-10 ｜ 更新：2026-08-10 ｜ 状态：**全部里程碑完成（M1-M5 ✅，10 命令已实现）**
+> 创建时间：2026-08-10 ｜ 更新：2026-08-10 ｜ 状态：**全部里程碑完成（M1-M5 ✅，4 核心命令 + 冻结实验入口）**
 
 ## OVERVIEW
 
@@ -33,6 +33,7 @@
 ```markdown
 # agents.md — <目录路径> 的知识边界
 ## OVERVIEW            ← 这个目录是干嘛的（1-2 句）
+## HOW TO CONSUME      ← 仅根节点：5 步消费协议（知识树自教消费）
 ## SUB-KNOWLEDGE       ← 知识链路：每个子目录一行（一句摘要 + 相对路径）
 ## DEPENDS             ← 依赖知识：项目内指针 + 项目外标注
 ## FILES               ← 本目录可见文件清单与职责
@@ -98,7 +99,7 @@
 
 - **侦查路线**：问题 → 根 agents.md 的 WHERE TO LOOK 路由表 → 目录 agents.md → 源码指针 → 代码本身。链路末端永远可跳到**真实源码**——最坏情况读到代码，而代码永远是对的。
 - **查询协议（问谁）**：目录内问题 → 本 owner 内部解决（QA 命中）；已记录依赖 → 沿 DEPENDS 读被依赖方 owner（**查询经由 owner，不直接扫原始文件**）；全局问题/模糊关联 → 回溯根（全局索引/契约）定位后直达。**答案必须可溯源**：标注来自哪个 agents.md 的哪个条目。
-- **问答形式（命中即答，未命中即导）**：`aimake ask` 确定性匹配 QA 条目/索引 → 命中即返回「摘要答案 + 证据指针」（零上下文噪声）；未命中 → **源码级候选**（全树 KEY SYMBOLS/FILES 关键词匹配，Top N 截断防噪音）→ 仍未命中 → 明确「**知识树未覆盖此问题**」+ 建议读候选源码/写反馈补 QA——**不得声称"核实过的没有"**（知识库未覆盖 ≠ 项目里没有；系统性否定只在源码级覆盖检查后成立）。
+- **问答形式（命中即答，未命中即导）**：`python -m aimake.experimental ask` 确定性匹配 QA 条目/索引 → 命中即返回「摘要答案 + 证据指针」（零上下文噪声）；未命中 → **源码级候选**（全树 KEY SYMBOLS/FILES 关键词匹配，Top N 截断防噪音）→ 仍未命中 → 明确「**知识树未覆盖此问题**」+ 建议读候选源码/写反馈补 QA——**不得声称"核实过的没有"**（知识库未覆盖 ≠ 项目里没有；系统性否定只在源码级覆盖检查后成立）。
   - 大项目（千级节点）：运行时扫全树零 token（<200ms）；Linux 级（3-4 万节点）：须**符号倒排索引物化**（ctags 式，init/update 构建 `.aimake/symbols.idx`，ask 查索引毫秒级）。
 - **全局索引与向下查找**：根节点的 WHERE TO LOOK 捷径表 = 全局索引的正式化（`aimake tree` 输出其物化文本）。模糊关联问题先读捷径表（一个文件）定位候选，不逐层试探；搜索可挪出上下文（CLI 过滤零 token），只把候选带进上下文。逐层下钻时每层摘要即索引条目，成本 = O(展开的匹配路径)，不是 O(整棵树)。
 - **跨目录契约**：全局横切知识（全局配置、认证、数据流协议）在根 agents.md 由模型从全局视角捕获，不依赖任何单目录的 import——多目录协作问题（如 api/caller/hacker 三层）的导航入口。
@@ -106,7 +107,7 @@
 
 ### 消费协议（消费方 AI 的约定）
 
-- **会话启动**：新会话先读根 agents.md（方向）+ tasks.md（任务上下文）→ 建立方向。
+- **会话启动**：新会话先读根 agents.md（方向）+ tasks.md（任务上下文）→ 建立方向。根 agents.md 现含 `## HOW TO CONSUME`（5 步消费协议）——知识树自身教会 AI 如何消费它。
 - **知识发现**：若项目根有 `.aimake-link`（一行"知识路径: ../.aimake/<项目名>"）→ 按指针去知识根；无则按约定"项目知识在父目录 `.aimake/<项目名>/`"。
 - **消费前**：核对 `.meta` 指纹——过期则提示/触发 `update`。
 - **消费中**：按"查询协议"行走；换"读"不换会话（加载上下文），换"活"才换会话（tasks.md 交接）。**ask 未命中 ≠ 答案不存在**——沿源码级候选指针继续导航到真实代码，不得以"ask 说没有"为由停止（承诺可达的底线）。
@@ -119,7 +120,7 @@
 
 ### 产品形态
 
-- **CLI**：`scan`（扫描可见目录树，已实现）/ `init <目标>`（全树生成到知识根镜像，已实现）/ `update [路径]`（指纹驱动受影响子图重生成，已实现）/ `update --feedback`（反馈队列，已实现）/ `status`（过期清单 + 待处理反馈 + 符号自检，已实现）/ `tree`（知识树总览 = 全局索引物化，已实现）/ `ask`（QA 问答 + 捷径表匹配，命中即答，答案带来源，已实现）/ `scaffold "一句话"`（从描述生成项目骨架 + 自动 init，已实现）/ `maintain`（一键维护：检查→指纹更新→反馈处理→报告，已实现）/ `ignore`（CLI 管理忽略规则：add/remove/list/reset，已实现）。
+- **CLI（核心 4 命令）**：`init <目标>`（全树生成到知识根镜像）/ `update [路径]`（指纹驱动受影响子图重生成）/ `status`（过期清单 + 待处理反馈 + 符号自检，只读）/ `tree`（知识树总览 = 全局索引物化）。原 `scan` / `update --feedback` / `ask` / `scaffold` / `maintain` / `ignore` 已移入冻结实验入口 `python -m aimake.experimental`（保留、不删除，仅源码树可用，不编入 Nuitka 二进制）。
 - **用户输入双层**：维护层 = 用户敲 CLI 命令；消费层 = 初始化后用户正常开发，AI 工具读 `.aimake` 知识树——**aimake 不拦截任何对话，是"生成一次、随时被消费"的知识底座**。
 - **实现心智模型（make 类比）**：aimake = 知识的 make——依赖图 + 增量构建（指纹）+ 并行 + dry-run；codex exec / opencode run 是 Makefile 里的 cc（可插拔引擎）。AI 输出**分流**：编译产物进文件系统、导航判断归消费方 AI、依赖修正进图（下一轮生效）、错误进反馈队列（见生成规则/更新机制）。
 - **init 流程**：① 确定知识根（运行目录 `.aimake/`）与扫描目标 → ② 扫描目标目录树 → ③ 建依赖图与调用计划 → ④ 创建知识根镜像骨架 + `.meta` → ⑤ 叶子节点并行调用 codex exec（内容分级）→ ⑥ 父级等子级完成后调用（注入子级摘要 + 依赖候选名单）→ ⑦ 根节点最后生成（聚合 + 跨目录契约 + 全局捷径表）→ ⑧ 写指纹 + 可选 `.aimake-link`，输出报告（知识树、调用次数、耗时）。
@@ -130,7 +131,7 @@
 ```
 aimake/
 ├── aimake/                           # Python 包（CLI 入口）
-│   ├── __main__.py                   # CLI：10 命令全部实现
+│   ├── __main__.py                   # CLI：核心 4 命令分发（init/update/status/tree）
 │   ├── config.py                     # ignore 规则（默认 7 项 + .aimakeignore + fnmatch）
 │   ├── walk.py                       # 目录遍历（followlinks=False + 剪枝）
 │   ├── imports.py                    # import 静态扫描（多语言候选名单）
@@ -140,7 +141,8 @@ aimake/
 │   ├── prompt.py                     # 提示词模板（全量/轻量 + 分级 + 预算降级 + 提案/源码）
 │   ├── engine.py                     # 生成引擎抽象（通用接口 + codex/opencode 预置 + 配置）
 │   ├── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock）
-│   └── feedback.py                   # 反馈文件（格式/解析/写入/四方确认）
+│   ├── feedback.py                   # 反馈文件（格式/解析/写入/四方确认）
+│   └── experimental/                 # 冻结实验入口（scan/ask/scaffold/maintain/ignore/update --feedback）
 ├── .aimake/                          # 自举：aimake 自身的知识（init 产物，待生成）
 ├── AGENTS.md                         # 本文档
 ├── plan.md                           # 项目计划
@@ -155,7 +157,8 @@ aimake/
 | 项目计划 | plan.md | 目标/里程碑/阶段 |
 | 任务清单 | task.md | 任务拆分与状态 |
 | 产品设计 | 本文档「核心设计」 | 多轮讨论沉淀的完整设计 |
-| CLI 入口 | aimake/__main__.py | 10 命令分发（scan/init/update/status/tree/ask/scaffold/maintain） |
+| CLI 入口 | aimake/__main__.py | 核心 4 命令分发（init/update/status/tree） |
+| 冻结实验入口 | aimake/experimental/ | scan/ask/scaffold/maintain/ignore/update --feedback（仅源码树） |
 | ignore 规则 | aimake/config.py | 默认 7 项（含 .omo）+ .aimakeignore + fnmatch 通配 |
 | 目录遍历 | aimake/walk.py | os.walk + 剪枝 + 可见目录树 |
 | import 扫描 | aimake/imports.py | 多语言 import 候选名单（纯目录名） |
@@ -187,12 +190,15 @@ aimake/
 | run_nodes / run_engine | 函数 | aimake/runner.py | 1 | 并行生成 / 单次引擎调用（mock 支持） |
 | Feedback / parse_feedback / write_feedback | 类/函数 | aimake/feedback.py | 1 | 反馈报告 / 解析（根归一化）/ 写入 |
 | build_prompt_budgeted / build_proposal_prompt / build_source_prompt | 函数 | aimake/prompt.py | 1 | 预算降级 / 提案 / 源码清单提示词 |
-| _symbol_selfcheck / cmd_maintain / cmd_scaffold | 函数 | aimake/__main__.py | 1 | 符号自检（表格兼容）/ 一键维护 / 项目生成 |
-| main / cmd_scan / cmd_init | 函数 | aimake/__main__.py | 0 | CLI 分发 / scan / init（骨架+dry-run） |
+| _symbol_selfcheck | 函数 | aimake/__main__.py | 1 | 符号自检（表格兼容） |
+| cmd_maintain / cmd_scaffold | 函数 | aimake/experimental/__main__.py | 1 | 一键维护 / 项目生成（冻结实验） |
+| main / cmd_init | 函数 | aimake/__main__.py | 0 | CLI 分发 / init（骨架+dry-run） |
+| cmd_scan / cmd_ask / cmd_ignore / cmd_update | 函数 | aimake/experimental/__main__.py | 0 | 冻结实验命令（scan/ask/ignore/update --feedback） |
 
 ## CONVENTIONS（已定）
 
-- CLI 子命令（全部已实现）：`scan` / `init` / `update(--feedback)` / `status` / `tree` / `ask` / `scaffold` / `maintain`。
+- CLI 子命令（核心 4 命令）：`init` / `update`（指纹驱动）/ `status` / `tree`；原 `scan` / `update --feedback` / `ask` / `scaffold` / `maintain` / `ignore` 移入冻结实验入口 `python -m aimake.experimental`。
+- 冻结实验入口（已定）：保留、不删除，仅源码树可用，不编入 Nuitka 二进制。
 - ignore 规则集中管理，风格参考 `.gitignore`。
 - 目录遍历与子进程调用只用 Python 标准库，零第三方依赖（已定）。
 - **产物语言与格式（已定）**：生成的 agents.md 内容一律**中文**；知识文件后缀一律 `.md`。schema 小节标题为协议键（当前为英文键，供父级机器解析聚合），键名如需中文化必须全局一致迁移，防止解析断裂。
@@ -212,41 +218,42 @@ aimake/
 ## COMMANDS（已实现）
 
 ```bash
-# 扫描：可见目录树（ignore 规则生效，已实现）
-python -m aimake scan [路径]
-
 # 初始化：知识根生成目标项目镜像知识树
 python -m aimake init [目标]
 
 # 更新：指纹驱动重生成受影响目录链
 python -m aimake update [路径]
 
-# 更新：反馈驱动处理消费侧纠错队列
-python -m aimake update --feedback
-
 # 状态：过期清单 / 待处理反馈 / 符号自检 / 知识树总览
 python -m aimake status
 python -m aimake tree
 
+# 实验入口（冻结，保留、不删除，仅源码树可用，不编入 Nuitka 二进制）
+# 扫描：可见目录树（ignore 规则生效）
+python -m aimake.experimental scan [路径] [--deps]
+
+# 更新：反馈驱动处理消费侧纠错队列
+python -m aimake.experimental update --feedback [目标]
+
 # 问答：命中 QA 即答（答案带来源标注）
-python -m aimake ask "问题"
+python -m aimake.experimental ask "问题" [目标]
 
 # 项目生成：一句话 → 提案 → 确认 → 源码 → 骨架 → 自动 init
-python -m aimake scaffold "创建数学大厦" [--default]
+python -m aimake.experimental scaffold "创建数学大厦" [--default]
 
 # 一键维护：状态检查 → 指纹更新 → 反馈处理 → 报告
-python -m aimake maintain [目标]
+python -m aimake.experimental maintain [目标]
 
 # 忽略规则（CLI 管理 .aimakeignore，无需手写）
-python -m aimake ignore add .omo/ [--project 项目]
-python -m aimake ignore list / remove <规则> / reset
+python -m aimake.experimental ignore add .omo/ [--project 项目]
+python -m aimake.experimental ignore list / remove <规则> / reset
 
 # 构建（Nuitka → 独立可执行；Termux 需 glibc 工具链 PATH + LD_LIBRARY_PATH）
 export PATH="$PATH:$PREFIX/glibc/bin"   # patchelf/ldd 在 glibc 前缀
 python -m nuitka --standalone --onefile main.py
 mkdir -p bin && mv main.bin bin/aimake.bin
 # 启动器 bin/aimake 已内置 LD_LIBRARY_PATH（bionic 链接器定位 libpython）
-./bin/aimake scan
+./bin/aimake status
 ```
 
 ## NOTES
@@ -263,7 +270,7 @@ mkdir -p bin && mv main.bin bin/aimake.bin
   - Termux 网络规避：`check_for_update_on_startup = false`（不可达时跳过版本检查）；`[features] plugins = false`（禁用插件系统防启动挂起）
   - 项目信任：`[projects."<路径>"] trust_level = "trusted"`（codex 信任项目目录）
   - 原则：aimake 的 `engine.command` 保持最小（`["codex", "exec", "--full-auto"]`），模型/认证/沙箱/网络全部由 config.toml 决定
-- 测试：`python3 -m unittest discover tests`（零依赖，12 用例覆盖四道闸）。
+- 测试：`python3 -m unittest discover tests`（零依赖，全部用例通过，覆盖四道闸）。
 
 ---
 
