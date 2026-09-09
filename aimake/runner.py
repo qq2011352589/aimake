@@ -30,6 +30,11 @@ def run_engine(engine: EngineSpec, prompt: str, cwd: Path) -> str:
     """调用引擎，返回 stdout 文本（aimake 负责写文件，引擎只产文本）。"""
     if engine.name == "mock":
         return _mock_output(prompt)
+    if engine.name == "openai":
+        # 纯标准库 HTTP 引擎（仅 grep 工具）：懒加载，避免污染子进程路径
+        from .openai_engine import run_openai_engine
+
+        return run_openai_engine(engine, prompt, cwd)
     if not engine.command:
         raise RuntimeError(
             f"引擎 {engine.name} 未配置命令（请在 .aimake/aimake.json 定义 command）"
