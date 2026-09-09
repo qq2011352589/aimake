@@ -62,11 +62,13 @@ python -m aimake.experimental update --feedback project-a       # 反馈驱动�
 
 ```bash
 # 核心 4 命令
-aimake init [目标] [--engine E] [--concurrency N] [--retries N] [--budget N] [--dry-run]
+aimake init [目标] [--engine E] [--concurrency N] [--retries N] [--budget N] [--time-budget 秒] [--max-nodes N] [--dry-run]
 aimake update [目标] [--engine E] [--budget N]      # 指纹驱动重生成受影响子图
 aimake status [目标]                                 # 过期清单 / 反馈队列 / 符号自检
 aimake tree [目标]                                   # 知识树总览（全局索引物化）
 ```
+
+> `init` 可断点续跑：`--time-budget <秒>` / `--max-nodes <n>` 到点或到限即暂停（退出码 0，打印待续跑数量），再次运行会跳过已生成且未过期的节点继续；产物原子写入，`.meta` 在生成后刷新，全部完成打印「全部最新」。
 
 实验入口（冻结，仅源码树可用，不编入 Nuitka 二进制）：
 
@@ -88,9 +90,23 @@ python -m aimake.experimental ignore add .omo/ [--project 项目]
   "concurrency": 4, "retries": 2, "budget": 20000 }
 ```
 
-预置引擎：`codex` / `opencode` / `mock`（内置确定性生成器，无认证测试用）。`--engine <自定义名>` + 配置 `command` 即可接入任意 CLI。
+预置引擎：`codex` / `opencode` / `mock`（内置确定性生成器，无认证测试用）/ `openai`（纯标准库 OpenAI 兼容 HTTP 引擎，仅内置只读 `grep` 工具，无 CLI/沙箱依赖）。`--engine <自定义名>` + 配置 `command` 即可接入任意 CLI。
+
+`openai` 引擎走 OpenAI 兼容 `/chat/completions`，唯一工具是只读 `grep`（纯 Python 正则、限定目标项目内、无 shell），只需一个 API key，适合 CI 等无 CLI/沙箱环境：
+
+```json
+{ "engine": { "name": "openai", "base_url": "https://api.deepseek.com/v1",
+              "model": "deepseek-chat", "api_key_env": "AIMAKE_OPENAI_API_KEY",
+              "max_tokens": 4096, "max_tool_rounds": 8 } }
+```
+
+环境变量（优先级高于配置文件，便于 CI 注入、不落盘）：`AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY`（`api_key_env` 默认即指向它）。引擎解析优先级：CLI `--engine <名>` > 配置 `engine.name` > `codex`；用 `--engine <名>` 时配置字段仍合并，但 `command` 与引擎名绑定——配置名与 CLI 名不一致时丢弃 `command`，避免用 codex 的命令去跑 openai。
 
 **codex 引擎的模型/认证/沙箱全部继承 `~/.codex/config.toml`**（aimake 只管 `command`，不碰 codex 配置）：`codex login` 认证、`model`/`model_provider` 选模型、第三方 provider 配 `base_url`、Termux 用 `sandbox_mode = "danger-full-access"`（Android 无 bubblewrap）。
+
+### GitHub Actions 增量生成
+
+`.github/workflows/aimake-knowledge.yml` 定时 + 手动触发增量生成：用 `openai` 引擎跑 `init`/`update`，把 `.aimake` 提交到 `aimake-knowledge` 分支（提交信息带 `[skip ci]` 防止回环触发；`.aimake` 被 gitignore，用 `git add -f` 强制加入），上传 `status` 作为 artifact，覆盖率到 100% 时打 `knowledge-vN` 标签。需配置仓库 secret `AIMAKE_OPENAI_API_KEY`，未设置时跳过并给出提示。
 
 ## 消费协议（AI 工具读取约定）
 
@@ -120,7 +136,8 @@ aimake/
 │   ├── meta.py       # .meta 指纹（sha256 + is_stale 过期判定）
 │   ├── skeleton.py   # 知识根镜像骨架
 │   ├── prompt.py     # 提示词模板（全量/轻量 + 内容分级 + 预算降级）
-│   ├── engine.py     # 引擎抽象（codex/opencode 预置 + aimake.json 配置）
+│   ├── engine.py     # 引擎抽象（codex/opencode/openai/mock 预置 + aimake.json 配置）
+│   ├── openai_engine.py # openai 引擎（纯标准库 /chat/completions + 只读 grep 工具）
 │   ├── runner.py     # 执行器（并发/超时/重试/失败标记/mock）
 │   ├── experimental/ # 冻结实验入口（scan/ask/scaffold/maintain/ignore/update --feedback）
 │   └── feedback.py   # 反馈文件（格式/解析/写入/四方确认）

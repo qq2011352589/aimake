@@ -139,10 +139,12 @@ aimake/
 │   ├── meta.py                       # .meta 指纹（sha256 + 过期判定）
 │   ├── skeleton.py                   # 知识根镜像骨架创建
 │   ├── prompt.py                     # 提示词模板（全量/轻量 + 分级 + 预算降级 + 提案/源码）
-│   ├── engine.py                     # 生成引擎抽象（通用接口 + codex/opencode 预置 + 配置）
-│   ├── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock）
+│   ├── engine.py                     # 生成引擎抽象（通用接口 + codex/opencode/openai/mock 预置 + 配置）
+│   ├── openai_engine.py              # openai 引擎（纯标准库 /chat/completions + 只读 grep 工具）
+│   ├── runner.py                     # 执行器（并发池 + 超时 + 重试 + mock/openai 引擎）
 │   ├── feedback.py                   # 反馈文件（格式/解析/写入/四方确认）
 │   └── experimental/                 # 冻结实验入口（scan/ask/scaffold/maintain/ignore/update --feedback）
+├── .github/workflows/                 # CI：aimake-knowledge.yml（增量生成）+ release.yml
 ├── .aimake/                          # 自举：aimake 自身的知识（init 产物，待生成）
 ├── AGENTS.md                         # 本文档
 ├── plan.md                           # 项目计划
@@ -157,7 +159,7 @@ aimake/
 | 项目计划 | plan.md | 目标/里程碑/阶段 |
 | 任务清单 | task.md | 任务拆分与状态 |
 | 产品设计 | 本文档「核心设计」 | 多轮讨论沉淀的完整设计 |
-| CLI 入口 | aimake/__main__.py | 核心 4 命令分发（init/update/status/tree） |
+| CLI 入口 | aimake/__main__.py | 核心 4 命令分发（init/update/status/tree）；init 支持 `--time-budget` / `--max-nodes` 断点续跑 |
 | 冻结实验入口 | aimake/experimental/ | scan/ask/scaffold/maintain/ignore/update --feedback（仅源码树） |
 | ignore 规则 | aimake/config.py | 默认 7 项（含 .omo）+ .aimakeignore + fnmatch 通配 |
 | 目录遍历 | aimake/walk.py | os.walk + 剪枝 + 可见目录树 |
@@ -166,8 +168,10 @@ aimake/
 | 指纹 | aimake/meta.py | .meta 写入/读取/过期判定 |
 | 镜像骨架 | aimake/skeleton.py | 知识根镜像目录 + .meta 落位 |
 | 提示词模板 | aimake/prompt.py | 十小节全量档 + SUMMARY 轻量档 + 内容分级 + OVERVIEW 提取 |
-| 引擎抽象 | aimake/engine.py | EngineSpec 通用接口 + codex/opencode 预置 + aimake.json 配置 |
-| 执行器 | aimake/runner.py | 并发池 + 超时 + 重试 + 失败标记 + mock 引擎 |
+| 引擎抽象 | aimake/engine.py | EngineSpec 通用接口 + codex/opencode/openai/mock 预置 + aimake.json 配置（base_url/model/api_key_env + AIMAKE_OPENAI_* 环境变量） |
+| openai 引擎 | aimake/openai_engine.py | 纯标准库 /chat/completions + 只读 grep 工具（Python 正则、限项目内、无 shell） |
+| 执行器 | aimake/runner.py | 并发池 + 超时 + 重试 + 失败标记 + mock/openai 引擎 |
+| CI 增量生成 | .github/workflows/aimake-knowledge.yml | 定时/手动增量生成 → 提交 .aimake 到 aimake-knowledge 分支（[skip ci]）+ status artifact + knowledge-vN 标签 |
 | 反馈文件 | aimake/feedback.py | 事实性报告：格式/解析/写入/四方确认 |
 
 ## CODE MAP
@@ -186,8 +190,9 @@ aimake/
 | file_hash / write_meta / is_stale | 函数 | aimake/meta.py | 1 | 指纹计算 / 写入 / 过期判定 |
 | create_skeleton / mirror_prefix | 函数 | aimake/skeleton.py | 1 | 镜像骨架 / 镜像前缀 |
 | decide_tier / build_prompt / extract_overview | 函数 | aimake/prompt.py | 1 | 内容分级 / 提示词构造 / OVERVIEW 提取 |
-| EngineSpec / load_engine_config | 类/函数 | aimake/engine.py | 1 | 引擎规格 / 配置加载（预置 codex/opencode） |
-| run_nodes / run_engine | 函数 | aimake/runner.py | 1 | 并行生成 / 单次引擎调用（mock 支持） |
+| EngineSpec / load_engine_config | 类/函数 | aimake/engine.py | 1 | 引擎规格 / 配置加载（预置 codex/opencode/openai/mock） |
+| run_openai_engine / grep | 函数 | aimake/openai_engine.py | 1 | openai 兼容 HTTP 调用 / 只读 grep 工具（正则、限项目内） |
+| run_nodes / run_engine | 函数 | aimake/runner.py | 1 | 并行生成 / 单次引擎调用（mock/openai 引擎） |
 | Feedback / parse_feedback / write_feedback | 类/函数 | aimake/feedback.py | 1 | 反馈报告 / 解析（根归一化）/ 写入 |
 | build_prompt_budgeted / build_proposal_prompt / build_source_prompt | 函数 | aimake/prompt.py | 1 | 预算降级 / 提案 / 源码清单提示词 |
 | _symbol_selfcheck | 函数 | aimake/__main__.py | 1 | 符号自检（表格兼容） |
@@ -204,6 +209,9 @@ aimake/
 - **产物语言与格式（已定）**：生成的 agents.md 内容一律**中文**；知识文件后缀一律 `.md`。schema 小节标题为协议键（当前为英文键，供父级机器解析聚合），键名如需中文化必须全局一致迁移，防止解析断裂。
 - **代码语言约定（已定）**：代码说英文，项目说中文——标识符/模块名用英文（生态约定），注释/文档字符串/CLI 输出/错误消息/提示词模板一律中文。分工：**AI 维护源码，人维护 md**（md 是人机接口层）。
 - 依赖发现：静态扫描只作候选名单，DEPENDS 由模型生成时确认。
+- **引擎（已定）**：预置 `codex` / `opencode` / `openai` / `mock`。`openai` 为纯标准库 OpenAI 兼容 `/chat/completions` 客户端（唯一工具是只读 `grep`，无 CLI/沙箱依赖），配置字段 `base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`；环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY` 优先级高于配置文件。引擎解析优先级：CLI `--engine` > 配置 `engine.name` > `codex`；CLI 指定名时配置字段仍合并（`command` 除外，配置名与 CLI 名不一致时丢弃）。
+- **init 断点续跑（已定）**：`--time-budget <秒>` / `--max-nodes <n>` 到点或到限即暂停（退出码 0，打印待续跑数量），重跑跳过已生成且未过期节点继续；产物原子写入，`.meta` 生成后刷新；全部完成打印「全部最新」。
+- **CI 增量生成（已定）**：`.github/workflows/aimake-knowledge.yml` 定时 + 手动触发，提交 `.aimake` 到 `aimake-knowledge` 分支（`[skip ci]`，`.aimake` 被 gitignore 时 `git add -f`），上传 `status` artifact，覆盖率 100% 打 `knowledge-vN` 标签；需 `AIMAKE_OPENAI_API_KEY` secret，未设置则跳过并提示。
 - 反馈文件：`.aimake/feedback/<日期>-<目录>.md`，事实性错误报告（错误小节 + 证据 + 来源条目）。
 
 ## ANTI-PATTERNS（本项目禁止）
@@ -218,8 +226,8 @@ aimake/
 ## COMMANDS（已实现）
 
 ```bash
-# 初始化：知识根生成目标项目镜像知识树
-python -m aimake init [目标]
+# 初始化：知识根生成目标项目镜像知识树（--time-budget/--max-nodes 断点续跑，重跑自动续传）
+python -m aimake init [目标] [--time-budget 秒] [--max-nodes N]
 
 # 更新：指纹驱动重生成受影响目录链
 python -m aimake update [路径]
@@ -248,6 +256,10 @@ python -m aimake.experimental maintain [目标]
 python -m aimake.experimental ignore add .omo/ [--project 项目]
 python -m aimake.experimental ignore list / remove <规则> / reset
 
+# CI 增量生成（.github/workflows/aimake-knowledge.yml）：定时/手动触发，
+# 提交 .aimake 到 aimake-knowledge 分支（[skip ci]）+ 上传 status artifact，
+# 覆盖率 100% 打 knowledge-vN 标签；需仓库 secret AIMAKE_OPENAI_API_KEY（未设置则跳过并提示）
+
 # 构建（Nuitka → 独立可执行；Termux 需 glibc 工具链 PATH + LD_LIBRARY_PATH）
 export PATH="$PATH:$PREFIX/glibc/bin"   # patchelf/ldd 在 glibc 前缀
 python -m nuitka --standalone --onefile main.py
@@ -270,6 +282,7 @@ mkdir -p bin && mv main.bin bin/aimake.bin
   - Termux 网络规避：`check_for_update_on_startup = false`（不可达时跳过版本检查）；`[features] plugins = false`（禁用插件系统防启动挂起）
   - 项目信任：`[projects."<路径>"] trust_level = "trusted"`（codex 信任项目目录）
   - 原则：aimake 的 `engine.command` 保持最小（`["codex", "exec", "--full-auto"]`），模型/认证/沙箱/网络全部由 config.toml 决定
+- **openai 引擎**：纯标准库 OpenAI 兼容 `/chat/completions` 客户端，唯一工具是只读 `grep`（Python 正则、限目标项目内、无 shell），无需 CLI 与沙箱，只需 API key。配置 `aimake.json` 的 `engine` 字段（`base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`），或环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY`（环境变量优先）。
 - 测试：`python3 -m unittest discover tests`（零依赖，全部用例通过，覆盖四道闸）。
 
 ---
