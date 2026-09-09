@@ -81,7 +81,9 @@ jobs:
             echo "知识树无变化，跳过提交"
           else
             git commit -m "chore(aimake): incremental knowledge [skip ci]"
-            git push origin HEAD:aimake-knowledge
+            # 知识分支是从 main 派生的生成产物；main 前进后普通 push 会 non-fast-forward，
+            # 且 concurrency 已防并发，故用 --force 覆盖该产物分支。
+            git push --force origin HEAD:aimake-knowledge
             echo "committed=true" >> "$GITHUB_OUTPUT"
           fi
 
