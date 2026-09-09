@@ -64,6 +64,7 @@ jobs:
           AIMAKE_OPENAI_API_KEY: ${{ secrets.AIMAKE_OPENAI_API_KEY }}
           AIMAKE_OPENAI_BASE_URL: ${{ secrets.AIMAKE_OPENAI_BASE_URL }}
           AIMAKE_OPENAI_MODEL: ${{ secrets.AIMAKE_OPENAI_MODEL }}
+          AIMAKE_OPENAI_MAX_TOKENS: ${{ secrets.AIMAKE_OPENAI_MAX_TOKENS }}
         run: |
           python -m aimake init . --engine openai --time-budget "${{ inputs.time_budget || '3000' }}" --max-nodes "${{ inputs.max_nodes || '50' }}" --concurrency 4 || true
           python -m aimake status . > status-report.txt 2>&1 || true

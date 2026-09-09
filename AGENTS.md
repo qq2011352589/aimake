@@ -209,7 +209,7 @@ aimake/
 - **产物语言与格式（已定）**：生成的 agents.md 内容一律**中文**；知识文件后缀一律 `.md`。schema 小节标题为协议键（当前为英文键，供父级机器解析聚合），键名如需中文化必须全局一致迁移，防止解析断裂。
 - **代码语言约定（已定）**：代码说英文，项目说中文——标识符/模块名用英文（生态约定），注释/文档字符串/CLI 输出/错误消息/提示词模板一律中文。分工：**AI 维护源码，人维护 md**（md 是人机接口层）。
 - 依赖发现：静态扫描只作候选名单，DEPENDS 由模型生成时确认。
-- **引擎（已定）**：预置 `codex` / `opencode` / `openai` / `mock`。`openai` 为纯标准库 OpenAI 兼容 `/chat/completions` 客户端（唯一工具是只读 `grep`，无 CLI/沙箱依赖），配置字段 `base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`；环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY` 优先级高于配置文件。引擎解析优先级：CLI `--engine` > 配置 `engine.name` > `codex`；CLI 指定名时配置字段仍合并（`command` 除外，配置名与 CLI 名不一致时丢弃）。
+- **引擎（已定）**：预置 `codex` / `opencode` / `openai` / `mock`。`openai` 为纯标准库 OpenAI 兼容 `/chat/completions` 客户端（唯一工具是只读 `grep`，无 CLI/沙箱依赖），配置字段 `base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`；环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY` / `AIMAKE_OPENAI_MAX_TOKENS`（推理模型需调大） 优先级高于配置文件。引擎解析优先级：CLI `--engine` > 配置 `engine.name` > `codex`；CLI 指定名时配置字段仍合并（`command` 除外，配置名与 CLI 名不一致时丢弃）。
 - **init 断点续跑（已定）**：`--time-budget <秒>` / `--max-nodes <n>` 到点或到限即暂停（退出码 0，打印待续跑数量），重跑跳过已生成且未过期节点继续；产物原子写入，`.meta` 生成后刷新；全部完成打印「全部最新」。
 - **CI 增量生成（已定）**：`.github/workflows/aimake-knowledge.yml` 定时 + 手动触发，提交 `.aimake` 到 `aimake-knowledge` 分支（`[skip ci]`，`.aimake` 被 gitignore 时 `git add -f`），上传 `status` artifact，覆盖率 100% 打 `knowledge-vN` 标签；需 `AIMAKE_OPENAI_API_KEY` secret，未设置则跳过并提示。
 - 反馈文件：`.aimake/feedback/<日期>-<目录>.md`，事实性错误报告（错误小节 + 证据 + 来源条目）。
@@ -282,7 +282,7 @@ mkdir -p bin && mv main.bin bin/aimake.bin
   - Termux 网络规避：`check_for_update_on_startup = false`（不可达时跳过版本检查）；`[features] plugins = false`（禁用插件系统防启动挂起）
   - 项目信任：`[projects."<路径>"] trust_level = "trusted"`（codex 信任项目目录）
   - 原则：aimake 的 `engine.command` 保持最小（`["codex", "exec", "--full-auto"]`），模型/认证/沙箱/网络全部由 config.toml 决定
-- **openai 引擎**：纯标准库 OpenAI 兼容 `/chat/completions` 客户端，唯一工具是只读 `grep`（Python 正则、限目标项目内、无 shell），无需 CLI 与沙箱，只需 API key。配置 `aimake.json` 的 `engine` 字段（`base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`），或环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY`（环境变量优先）。
+- **openai 引擎**：纯标准库 OpenAI 兼容 `/chat/completions` 客户端，唯一工具是只读 `grep`（Python 正则、限目标项目内、无 shell），无需 CLI 与沙箱，只需 API key。配置 `aimake.json` 的 `engine` 字段（`base_url` / `model` / `api_key_env` / `max_tokens` / `max_tool_rounds`），或环境变量 `AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY` / `AIMAKE_OPENAI_MAX_TOKENS`（推理模型需调大）（环境变量优先）。
 - 测试：`python3 -m unittest discover tests`（零依赖，全部用例通过，覆盖四道闸）。
 
 ---

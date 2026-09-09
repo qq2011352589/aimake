@@ -100,7 +100,7 @@ python -m aimake.experimental ignore add .omo/ [--project 项目]
               "max_tokens": 4096, "max_tool_rounds": 8 } }
 ```
 
-环境变量（优先级高于配置文件，便于 CI 注入、不落盘）：`AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY`（`api_key_env` 默认即指向它）。引擎解析优先级：CLI `--engine <名>` > 配置 `engine.name` > `codex`；用 `--engine <名>` 时配置字段仍合并，但 `command` 与引擎名绑定——配置名与 CLI 名不一致时丢弃 `command`，避免用 codex 的命令去跑 openai。
+环境变量（优先级高于配置文件，便于 CI 注入、不落盘）：`AIMAKE_OPENAI_BASE_URL` / `AIMAKE_OPENAI_MODEL` / `AIMAKE_OPENAI_API_KEY` / `AIMAKE_OPENAI_MAX_TOKENS`（推理模型需调大）（`api_key_env` 默认即指向它）。引擎解析优先级：CLI `--engine <名>` > 配置 `engine.name` > `codex`；用 `--engine <名>` 时配置字段仍合并，但 `command` 与引擎名绑定——配置名与 CLI 名不一致时丢弃 `command`，避免用 codex 的命令去跑 openai。
 
 **codex 引擎的模型/认证/沙箱全部继承 `~/.codex/config.toml`**（aimake 只管 `command`，不碰 codex 配置）：`codex login` 认证、`model`/`model_provider` 选模型、第三方 provider 配 `base_url`、Termux 用 `sandbox_mode = "danger-full-access"`（Android 无 bubblewrap）。
 
