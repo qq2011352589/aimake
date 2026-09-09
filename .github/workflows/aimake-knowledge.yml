@@ -1,0 +1,135 @@
+name: aimake knowledge (incremental)
+
+# 每日增量生成知识树；亦可手动触发并覆盖预算/节点上限。
+# 产物提交并推送到 aimake-knowledge 分支（不污染主分支）；
+# 全部节点落盘后自动打 knowledge-vN 里程碑 tag。
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      time_budget:
+        description: 生成时间预算（秒），到点暂停可续跑
+        required: false
+        default: '3000'
+      max_nodes:
+        description: 单次最多生成的节点数，到限暂停可续跑
+        required: false
+        default: '50'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aimake-knowledge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: 增量生成知识树
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出仓库（完整历史 + 保留推送凭据）
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 守卫：缺少 API key 则跳过
+        id: guard
+        env:
+          AIMAKE_OPENAI_API_KEY: ${{ secrets.AIMAKE_OPENAI_API_KEY }}
+        run: |
+          if [ -z "$AIMAKE_OPENAI_API_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::AIMAKE_OPENAI_API_KEY 未配置，跳过本次知识生成"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 恢复既有知识树（增量基线）
+        run: |
+          git fetch origin aimake-knowledge --depth=1 || true
+          git checkout FETCH_HEAD -- .aimake 2>/dev/null || true
+
+      - name: 增量生成知识树（守卫）
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          AIMAKE_OPENAI_API_KEY: ${{ secrets.AIMAKE_OPENAI_API_KEY }}
+          AIMAKE_OPENAI_BASE_URL: ${{ secrets.AIMAKE_OPENAI_BASE_URL }}
+          AIMAKE_OPENAI_MODEL: ${{ secrets.AIMAKE_OPENAI_MODEL }}
+        run: |
+          python -m aimake init . --engine openai --time-budget "${{ inputs.time_budget || '3000' }}" --max-nodes "${{ inputs.max_nodes || '50' }}" --concurrency 4 || true
+          python -m aimake status . > status-report.txt 2>&1 || true
+
+      - name: 提交并推送知识树（守卫）
+        id: commit
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f .aimake
+          if git diff --cached --quiet; then
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            echo "知识树无变化，跳过提交"
+          else
+            git commit -m "chore(aimake): incremental knowledge [skip ci]"
+            git push origin HEAD:aimake-knowledge
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 上传状态报告（守卫）
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aimake-status
+          path: status-report.txt
+          retention-days: 14
+
+      - name: 全覆盖时打里程碑 tag（守卫）
+        if: steps.guard.outputs.skip != 'true' && steps.commit.outputs.committed == 'true'
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from aimake.graph import build_knowledge_graph
+          from aimake.skeleton import mirror_prefix, resolve_knowledge_root
+          from aimake.walk import walk_project
+
+          cwd = Path.cwd()
+          knowledge_root = resolve_knowledge_root(cwd)
+          prefix = mirror_prefix(knowledge_root, cwd, cwd)
+          result = walk_project(cwd)
+          graph = build_knowledge_graph(result)
+          total = len(graph.nodes)
+          present = sum(
+              1
+              for node in graph.nodes.values()
+              if (prefix / node.rel / "agents.md" if node.rel else prefix / "agents.md").is_file()
+          )
+          print(f"present={present} total={total}")
+          if total <= 0 or present != total:
+              print("知识树未全覆盖，跳过打 tag")
+              sys.exit(0)
+          tags = subprocess.run(
+              ["git", "tag", "--list", "knowledge-v*"],
+              capture_output=True, text=True, check=True,
+          ).stdout.split()
+          numbers = [
+              int(tag.rsplit("v", 1)[-1])
+              for tag in tags
+              if tag.rsplit("v", 1)[-1].isdigit()
+          ]
+          next_tag = f"knowledge-v{max(numbers, default=0) + 1}"
+          subprocess.run(["git", "tag", next_tag], check=True)
+          subprocess.run(["git", "push", "origin", "--tags"], check=True)
+          print(f"已打 tag：{next_tag}")
+          PY
