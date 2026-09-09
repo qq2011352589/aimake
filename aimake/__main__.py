@@ -205,7 +205,8 @@ def _missing_nodes(graph: KnowledgeGraph, prefix: Path) -> list[str]:
     missing: list[str] = []
     for rel in graph.nodes:
         md = prefix / rel / "agents.md" if rel else prefix / "agents.md"
-        if not md.is_file():
+        # 0 字节产物视为缺失：引擎返回空内容（如推理模型耗尽 token 预算）时需重生成
+        if not md.is_file() or md.stat().st_size == 0:
             missing.append(rel)
     return sorted(missing)
 

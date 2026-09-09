@@ -56,6 +56,17 @@ class TestMissingNodes(NeedSetFixture):
 
         self.assertEqual(missing, ["lib", "misc"])
 
+    def test_empty_agents_md_counts_as_missing(self):
+        """Given src 的 agents.md 为 0 字节，When 扫描缺失，Then src 仍算缺失（需重生成）。"""
+        (self.prefix / "src").mkdir(parents=True)
+        (self.prefix / "agents.md").write_text("根\n", encoding="utf-8")
+        (self.prefix / "src" / "agents.md").write_text("", encoding="utf-8")
+
+        missing = _missing_nodes(self.graph, self.prefix)
+
+        self.assertIn("src", missing)
+        self.assertNotIn("", missing)
+
     def test_all_missing_when_skeleton_empty(self):
         """Given 骨架为空，When 扫描，Then 全部节点（含根 ""）缺失且排序。"""
         missing = _missing_nodes(self.graph, self.prefix)
