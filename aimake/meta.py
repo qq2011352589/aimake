@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from .atomic import atomic_write_text
+
 META_NAME = ".meta"
 _CHUNK = 65536
 
@@ -38,7 +40,7 @@ def write_meta(source_dir: Path, files: list[str], meta_path: Path) -> Path:
             digest = "000000000000"
         lines.append(f"{name} {digest}")
     meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(meta_path, "\n".join(lines) + "\n")
     return meta_path
 
 
