@@ -43,5 +43,7 @@ def create_skeleton(
         mirror_dir = prefix if rel == "." else prefix / rel
         mirror_dir.mkdir(parents=True, exist_ok=True)
         created.append(mirror_dir)
-        metas.append(write_meta(d, walk.files[d], mirror_dir / META_NAME))
+        meta_path = mirror_dir / META_NAME
+        if not meta_path.exists():
+            metas.append(write_meta(d, walk.files[d], meta_path))
     return created, metas
