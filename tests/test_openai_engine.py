@@ -112,6 +112,30 @@ class TestToolLoop(unittest.TestCase):
             self.assertEqual(srv.requests[1]["messages"][-1]["role"], "tool")
             self.assertIn("needle", srv.requests[1]["messages"][-1]["content"])
 
+    def test_exhausted_rounds_forces_final_no_tools_call(self):
+        """工具轮次耗尽 → 强制一次不带工具的调用取最终答案（不直接失败）。"""
+        with tempfile.TemporaryDirectory() as td:
+            cwd = Path(td)
+            (cwd / "foo.txt").write_text("needle\n", encoding="utf-8")
+            srv = _MockServer([
+                (200, _chat(
+                    tool_calls=[_call("c1", "grep", {"pattern": "needle"})],
+                    finish="tool_calls",
+                )),
+                (200, _chat(content="# final without tools")),
+            ])
+            os.environ["AIMAKE_TEST_KEY"] = "k"
+            try:
+                spec = EngineSpec("openai", [], "arg", 10, base_url=srv.base_url,
+                                  model="t", api_key_env="AIMAKE_TEST_KEY", max_tool_rounds=1)
+                out = run_openai_engine(spec, "p", cwd)
+            finally:
+                os.environ.pop("AIMAKE_TEST_KEY", None)
+                srv.close()
+            self.assertEqual(out, "# final without tools")
+            self.assertIn("tools", srv.requests[0])
+            self.assertNotIn("tools", srv.requests[1])
+
 
 class TestRetry(unittest.TestCase):
     def test_429_then_200(self):

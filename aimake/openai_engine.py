@@ -165,7 +165,7 @@ def _request_with_retry(req: urllib.request.Request, timeout: int) -> dict:
     raise RuntimeError("openai 引擎重试耗尽")
 
 
-def _post_chat(spec, messages: list[dict]) -> dict:
+def _post_chat(spec, messages: list[dict], allow_tools: bool = True) -> dict:
     key = os.environ.get(spec.api_key_env, "")
     if not key:
         raise RuntimeError(f"openai 引擎缺少 API key（请设置环境变量 {spec.api_key_env}）")
@@ -176,11 +176,12 @@ def _post_chat(spec, messages: list[dict]) -> dict:
     body = {
         "model": spec.model,
         "messages": messages,
-        "tools": [GREP_TOOL],
-        "tool_choice": "auto",
         "max_tokens": spec.max_tokens,
         "stream": False,
     }
+    if allow_tools:
+        body["tools"] = [GREP_TOOL]
+        body["tool_choice"] = "auto"
     req = urllib.request.Request(
         _endpoint(spec.base_url),
         data=json.dumps(body).encode("utf-8"),
@@ -201,6 +202,19 @@ def _run_grep_tool(name: str, args: dict, cwd: Path) -> str:
     )
 
 
+def _final_content(message: dict) -> str:
+    """取最终文本；空内容（推理模型耗尽预算）判失败。"""
+    content = message.get("content") or ""
+    if not content.strip():
+        hint = (
+            "（模型可能把预算耗在 reasoning_content 上，请调大 max_tokens 或改用非推理模型）"
+            if message.get("reasoning_content")
+            else ""
+        )
+        raise RuntimeError(f"openai 引擎返回空内容{hint}")
+    return content
+
+
 def run_openai_engine(spec, prompt: str, cwd: Path) -> str:
     """调用 OpenAI 兼容端点，跑 grep 工具循环，返回最终 agents.md 文本。"""
     messages: list[dict] = [{"role": "user", "content": prompt}]
@@ -213,15 +227,7 @@ def run_openai_engine(spec, prompt: str, cwd: Path) -> str:
             raise RuntimeError(f"openai 引擎返回格式异常：{str(resp)[:300]}") from exc
         tool_calls = message.get("tool_calls")
         if choice.get("finish_reason") != "tool_calls" and not tool_calls:
-            content = message.get("content") or ""
-            if not content.strip():
-                hint = (
-                    "（模型可能把预算耗在 reasoning_content 上，请调大 max_tokens 或改用非推理模型）"
-                    if message.get("reasoning_content")
-                    else ""
-                )
-                raise RuntimeError(f"openai 引擎返回空内容{hint}")
-            return content
+            return _final_content(message)
         messages.append(message)
         for call in tool_calls or []:
             if call.get("type") != "function":
@@ -237,4 +243,10 @@ def run_openai_engine(spec, prompt: str, cwd: Path) -> str:
             messages.append(
                 {"role": "tool", "tool_call_id": call.get("id", ""), "content": result}
             )
-    raise RuntimeError("openai 引擎工具调用轮次超限")
+    # 工具轮次耗尽：强制一次「不带工具」的调用，逼模型给出最终答案
+    final = _post_chat(spec, messages, allow_tools=False)
+    try:
+        message = final["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"openai 引擎返回格式异常：{str(final)[:300]}") from exc
+    return _final_content(message)
