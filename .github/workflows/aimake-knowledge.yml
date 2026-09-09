@@ -113,14 +113,13 @@ jobs:
           result = walk_project(cwd)
           graph = build_knowledge_graph(result)
           total = len(graph.nodes)
-          present = sum(
-              1
-              for node in graph.nodes.values()
-              if (prefix / node.rel / "agents.md" if node.rel else prefix / "agents.md").is_file()
-          )
+          def _ok(rel: str) -> bool:
+              md = prefix / rel / "agents.md" if rel else prefix / "agents.md"
+              return md.is_file() and md.stat().st_size > 0
+          present = sum(1 for rel in graph.nodes if _ok(rel))
           print(f"present={present} total={total}")
           if total <= 0 or present != total:
-              print("知识树未全覆盖，跳过打 tag")
+              print("知识树未全覆盖（含空产物），跳过打 tag")
               sys.exit(0)
           tags = subprocess.run(
               ["git", "tag", "--list", "knowledge-v*"],
