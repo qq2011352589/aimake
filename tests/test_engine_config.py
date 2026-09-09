@@ -83,6 +83,17 @@ class TestEngineConfigMerge(unittest.TestCase):
             self.assertEqual(spec.base_url, "http://env")
             self.assertEqual(spec.model, "envm")
 
+    def test_env_max_tokens_overlay(self):
+        """AIMAKE_OPENAI_MAX_TOKENS 可覆盖（推理模型需更大预算）。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / ".aimake"
+            os.environ["AIMAKE_OPENAI_MAX_TOKENS"] = "16384"
+            try:
+                spec = load_engine_config(root, "openai")
+            finally:
+                os.environ.pop("AIMAKE_OPENAI_MAX_TOKENS", None)
+            self.assertEqual(spec.max_tokens, 16384)
+
 
 if __name__ == "__main__":
     unittest.main()

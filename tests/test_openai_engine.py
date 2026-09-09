@@ -157,6 +157,23 @@ class TestRetry(unittest.TestCase):
                 srv.close()
 
 
+class TestEmptyContent(unittest.TestCase):
+    def test_empty_content_raises(self):
+        """推理模型把预算耗在 reasoning_content 上时，空 content 必须判失败（不得写入 0 字节 agents.md）。"""
+        with tempfile.TemporaryDirectory() as td:
+            srv = _MockServer([
+                (200, {"choices": [{"index": 0, "finish_reason": "length", "message": {
+                    "role": "assistant", "content": "", "reasoning_content": "想了很久…"}}]}),
+            ])
+            os.environ["AIMAKE_TEST_KEY"] = "k"
+            try:
+                with self.assertRaises(RuntimeError):
+                    run_openai_engine(_spec(srv.base_url), "p", Path(td))
+            finally:
+                os.environ.pop("AIMAKE_TEST_KEY", None)
+                srv.close()
+
+
 class TestGrepTool(unittest.TestCase):
     def test_path_escape_rejected(self):
         """E3：路径越界被拒。"""

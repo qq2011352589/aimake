@@ -80,6 +80,9 @@ def resolve_engine(name: str, overrides: dict | None = None) -> EngineSpec:
         spec.base_url = os.environ["AIMAKE_OPENAI_BASE_URL"]
     if os.environ.get("AIMAKE_OPENAI_MODEL"):
         spec.model = os.environ["AIMAKE_OPENAI_MODEL"]
+    env_max = os.environ.get("AIMAKE_OPENAI_MAX_TOKENS", "")
+    if env_max.isdigit() and int(env_max) > 0:
+        spec.max_tokens = int(env_max)
     return spec
 
 

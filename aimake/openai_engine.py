@@ -213,7 +213,15 @@ def run_openai_engine(spec, prompt: str, cwd: Path) -> str:
             raise RuntimeError(f"openai 引擎返回格式异常：{str(resp)[:300]}") from exc
         tool_calls = message.get("tool_calls")
         if choice.get("finish_reason") != "tool_calls" and not tool_calls:
-            return message.get("content") or ""
+            content = message.get("content") or ""
+            if not content.strip():
+                hint = (
+                    "（模型可能把预算耗在 reasoning_content 上，请调大 max_tokens 或改用非推理模型）"
+                    if message.get("reasoning_content")
+                    else ""
+                )
+                raise RuntimeError(f"openai 引擎返回空内容{hint}")
+            return content
         messages.append(message)
         for call in tool_calls or []:
             if call.get("type") != "function":
