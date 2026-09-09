@@ -5,16 +5,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
+from .atomic import atomic_write_text
 from .engine import load_budget, load_engine_config, write_default_config
 from .feedback import list_feedback
-from .graph import build_knowledge_graph
+from .graph import KnowledgeGraph, build_knowledge_graph
 from .meta import is_stale, write_meta
 from .prompt import TIER_FULL, TIER_LIGHT, NodeContext, build_prompt_budgeted, decide_tier, extract_overview
 from .runner import run_nodes
 from .skeleton import create_skeleton, mirror_prefix, resolve_knowledge_root
-from .walk import walk_project
+from .walk import WalkResult, walk_project
 
 
 def _compute_heights(topo_order: list) -> dict[str, int]:
@@ -116,12 +118,33 @@ def _build_node_plan(
     return node_plan, degraded
 
 
-def _generate_waves(waves: list, node_plan: dict, engine, args) -> tuple[list, list]:
-    """执行波浪生成并写产物。返回 (成功列表, 失败列表)。"""
+def _generate_waves(
+    waves: list, node_plan: dict, engine, args,
+    *, deadline: float | None = None, max_nodes: int | None = None,
+    state: dict | None = None,
+) -> tuple[list, list]:
+    """执行波浪生成并写产物。返回 (成功列表, 失败列表)。
+
+    deadline/max_nodes 为预算闸：到点/到限即停并写入 state（done/stopped），
+    供调用方决定续跑；两者均 None 时行为与无预算完全一致。
+    """
+    if state is None:
+        state = {}
     ok: list = []
     failed: list = []
     total_waves = len(waves)
     for wi, wave in enumerate(waves, 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            state["stopped"] = "time"
+            print(f"  ⏸ 时间预算耗尽，暂停于层 {wi}/{total_waves}")
+            break
+        if max_nodes is not None:
+            remaining = max_nodes - state.get("done", 0)
+            if remaining <= 0:
+                state["stopped"] = "max_nodes"
+                print(f"  ⏸ 已达节点上限 {max_nodes}，暂停于层 {wi}/{total_waves}")
+                break
+            wave = wave[:remaining]
         print(f"  层 {wi}/{total_waves}：{len(wave)} 个节点并行…", flush=True)
         plan = [(n.rel, node_plan[n.rel][0], node_plan[n.rel][1]) for n in wave]
         gen = run_nodes(
@@ -130,11 +153,10 @@ def _generate_waves(waves: list, node_plan: dict, engine, args) -> tuple[list, l
             concurrency=args.concurrency,
             retries=args.retries,
         )
+        state["done"] = state.get("done", 0) + len(gen)
         for r in gen:
             if r.ok:
-                (node_plan[r.rel][2] / "agents.md").write_text(
-                    r.output, encoding="utf-8"
-                )
+                atomic_write_text(node_plan[r.rel][2] / "agents.md", r.output)
                 ok.append(r)
             else:
                 failed.append(r)
@@ -167,8 +189,48 @@ def _depends_consumers(graph, rel: str) -> set[str]:
     return consumers
 
 
+def _stale_nodes(graph: KnowledgeGraph, result: WalkResult, prefix: Path) -> list[str]:
+    """指纹比对：返回过期节点 rel 列表（去重排序，确定性）。"""
+    stale: list[str] = []
+    for rel, node in graph.nodes.items():
+        meta = prefix / rel / ".meta" if rel else prefix / ".meta"
+        files = result.files.get(node.path, [])
+        if is_stale(node.path, files, meta):
+            stale.append(rel)
+    return sorted(set(stale))
+
+
+def _missing_nodes(graph: KnowledgeGraph, prefix: Path) -> list[str]:
+    """返回尚未落盘 agents.md 的节点 rel 列表（init 断点续跑复用）。"""
+    missing: list[str] = []
+    for rel in graph.nodes:
+        md = prefix / rel / "agents.md" if rel else prefix / "agents.md"
+        if not md.is_file():
+            missing.append(rel)
+    return sorted(missing)
+
+
+def _affected_subgraph(graph: KnowledgeGraph, seed: list[str]) -> set[str]:
+    """受影响子图：种子节点 + 祖先链 + DEPENDS 消费者（与 update 同语义）。"""
+    return (
+        set(seed)
+        | {a for rel in seed for a in _ancestors(rel)}
+        | {c for rel in seed for c in _depends_consumers(graph, rel)}
+    )
+
+
+def _refresh_meta(
+    ok_list: list, graph: KnowledgeGraph, result: WalkResult, prefix: Path,
+) -> None:
+    """生成成功 → 刷新 .meta 指纹（未重生成节点指纹不变，保持"最新"判定）。"""
+    for r in ok_list:
+        node = graph.nodes[r.rel]
+        meta = prefix / node.rel / ".meta" if node.rel else prefix / ".meta"
+        write_meta(node.path, result.files.get(node.path, []), meta)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
-    """init：骨架 + .meta + 两阶段生成（波浪 + 失败快照补一轮）。"""
+    """init：骨架 + 需要集生成（断点续跑 + 时间/节点预算，两阶段收敛）。"""
     cwd = Path.cwd()
     target = Path(args.target).resolve() if args.target else cwd
     if not target.is_dir():
@@ -185,7 +247,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # T9：.aimake-link 消费发现指针须在 walk/.meta 之前写入（否则根指纹把链接算作变化）
     if target != cwd:
         link = target / ".aimake-link"
-        link.write_text(f"知识路径: {os.path.relpath(prefix, target)}\n", encoding="utf-8")
+        atomic_write_text(link, f"知识路径: {os.path.relpath(prefix, target)}\n")
     result = walk_project(target)
     graph = build_knowledge_graph(result)
     create_skeleton(knowledge_root, target, cwd, result)
@@ -195,7 +257,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"引擎：{engine.name}（command={engine.command or '内置'}）")
     print(f"节点总数：{len(graph.nodes)}")
 
-    # 节点计划：prompt 一次构造，两阶段复用（引用快照、不等待）
+    # 断点续跑：缺失（.meta 匹配也算）∪ 过期 → 受影响子图（本节点+祖先+消费者）
+    seed = set(_missing_nodes(graph, prefix)) | set(_stale_nodes(graph, result, prefix))
+    need = _affected_subgraph(graph, seed)
+    if not need:
+        print(f"全部最新（{len(graph.nodes)} 个节点，无需重生成）")
+        return 0
+
+    # 节点计划：prompt 一次构造，两阶段复用（引用快照、不等待）；覆盖全图供聚合
     node_plan, degraded = _build_node_plan(graph, result, prefix, budget=budget)
     if degraded:
         print(f"上下文预算：{degraded} 个节点超预算已降级（预算 {budget} 字符）")
@@ -203,6 +272,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("\n== 生成计划（dry-run）==")
         for node in graph.topo_order():
+            if node.rel not in need:
+                continue
             mirror = node_plan[node.rel][2]
             tier = decide_tier(
                 len(result.files.get(node.path, [])), len(node.children)
@@ -212,14 +283,33 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 0
 
     heights = _compute_heights(graph.topo_order())
+    order = [n for n in graph.topo_order() if n.rel in need]
+    waves1 = _collect_waves(order, heights)
+    time_budget = getattr(args, "time_budget", None)
+    max_nodes = getattr(args, "max_nodes", None)
+    deadline = time.monotonic() + time_budget if time_budget is not None else None
+    state: dict = {"done": 0, "stopped": ""}
+
     # 阶段一：分层波浪生成
-    waves1 = _collect_waves(graph.topo_order(), heights)
     print(f"\n== 阶段一：分层生成（{len(waves1)} 层，并发 {args.concurrency}）==")
-    ok_list, failed = _generate_waves(waves1, node_plan, engine, args)
-    print(f"阶段一：成功 {len(ok_list)}/{len(graph.nodes)} ｜ 失败 {len(failed)}")
+    ok_list, failed = _generate_waves(
+        waves1, node_plan, engine, args,
+        deadline=deadline, max_nodes=max_nodes, state=state,
+    )
+    _refresh_meta(ok_list, graph, result, prefix)
+    print(f"阶段一：成功 {len(ok_list)}/{len(need)} ｜ 失败 {len(failed)}")
+
+    if state.get("stopped"):
+        reason = {"time": "时间预算耗尽", "max_nodes": "节点数上限"}[state["stopped"]]
+        deferred = sum(
+            1 for rel in need if not (node_plan[rel][2] / "agents.md").is_file()
+        )
+        print(f"\n已暂停：{reason}（本次生成 {state['done']} 个，待续跑 {deferred} 个）")
+        print("续跑：再次运行 `aimake init <目标>`（已完成节点自动跳过）")
+        return 0 if not failed else 1
 
     # 阶段二：失败节点用快照补一轮；修复后刷新祖先链（最坏两轮收敛）
-    if failed:
+    if failed and not state.get("stopped"):
         print("\n== 阶段二：快照补一轮（失败重试 + 祖先链刷新）==")
         retry = run_nodes(
             [(rel, node_plan[rel][0], node_plan[rel][1]) for rel in
@@ -232,12 +322,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         still_failed: list = []
         for r in retry:
             if r.ok:
-                (node_plan[r.rel][2] / "agents.md").write_text(
-                    r.output, encoding="utf-8"
-                )
+                atomic_write_text(node_plan[r.rel][2] / "agents.md", r.output)
                 newly_ok.append(r)
             else:
                 still_failed.append(r)
+        _refresh_meta(newly_ok, graph, result, prefix)
         print(f"  重试：修复 {len(newly_ok)} ｜ 仍失败 {len(still_failed)}")
 
         # 受影响祖先链（沿树边向上，含根）——用修复后的快照重生成
@@ -249,10 +338,14 @@ def cmd_init(args: argparse.Namespace) -> int:
                 if rel in node_plan:
                     affected.add(rel)
         if affected:
-            order = [n for n in graph.topo_order() if n.rel in affected]
-            waves2 = _collect_waves(order, heights)
+            order2 = [n for n in graph.topo_order() if n.rel in affected]
+            waves2 = _collect_waves(order2, heights)
             print(f"  祖先链刷新：{len(affected)} 个节点（{'、'.join(sorted(r or '根' for r in affected))}）")
-            _ok2, fail2 = _generate_waves(waves2, node_plan, engine, args)
+            _ok2, fail2 = _generate_waves(
+                waves2, node_plan, engine, args,
+                deadline=deadline, max_nodes=max_nodes, state=state,
+            )
+            _refresh_meta(_ok2, graph, result, prefix)
             failed = [r for r in still_failed] + fail2
         else:
             failed = still_failed
@@ -295,25 +388,14 @@ def _cmd_update_fingerprint(args: argparse.Namespace) -> int:
         print(f"上下文预算：{degraded} 个节点超预算已降级（预算 {budget} 字符）")
 
     # 指纹比对 → 过期节点
-    stale: list[str] = []
-    for rel, node in graph.nodes.items():
-        meta = prefix / rel / ".meta" if rel else prefix / ".meta"
-        files = result.files.get(node.path, [])
-        if is_stale(node.path, files, meta):
-            stale.append(rel)
-    stale = sorted(set(stale))
+    stale = _stale_nodes(graph, result, prefix)
 
     if not stale:
         print(f"全部最新（{len(graph.nodes)} 个节点，无需重生成）")
         return 0
 
     # 受影响子图：过期节点 + 祖先链 + DEPENDS 消费者
-    affected: set[str] = set(stale)
-    for rel in stale:
-        affected.update(_ancestors(rel))
-    for rel in stale:
-        affected.update(_depends_consumers(graph, rel))
-    affected = sorted(affected)
+    affected = sorted(_affected_subgraph(graph, stale))
 
     print(f"过期：{len(stale)} 个（{'、'.join(r or '根' for r in stale)}）")
     print(f"受影响子图：{len(affected)} 个（含祖先链与 DEPENDS 消费者）"
@@ -565,6 +647,8 @@ def main(argv: list[str] | None = None) -> int:
     p_init.add_argument("--concurrency", type=int, default=4, help="并发上限（默认 4）")
     p_init.add_argument("--retries", type=int, default=2, help="失败重试次数（默认 2）")
     p_init.add_argument("--budget", type=int, default=None, help="每节点提示词预算（字符，超预算降级；0=不限制）")
+    p_init.add_argument("--time-budget", type=int, default=None, help="生成时间预算（秒）；到点暂停并保留已完成节点，重跑续传（0=立即暂停）")
+    p_init.add_argument("--max-nodes", type=int, default=None, help="单次最多生成的节点数；到限暂停，重跑续传")
     p_init.add_argument("--dry-run", action="store_true", help="只打印计划不执行")
     p_init.set_defaults(func=cmd_init)
 
