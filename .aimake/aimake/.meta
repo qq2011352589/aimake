@@ -1,0 +1,15 @@
+# aimake meta — 文件指纹（文件名 sha256 前 12 位）
+__init__.py 8cc289b2ced3
+__main__.py 9f107537497d
+atomic.py 542c4a2cf5aa
+config.py d05d72188a57
+engine.py 4678be1f67ae
+feedback.py a6fe50cefe47
+graph.py c6a6a1348d5f
+imports.py d1c809cb234c
+meta.py eeb50d8b9e8d
+openai_engine.py 63de0c99a9f4
+prompt.py c03afe5d87a9
+runner.py bc90df9699f5
+skeleton.py fecaaecc3460
+walk.py 36f3965b4ae0
