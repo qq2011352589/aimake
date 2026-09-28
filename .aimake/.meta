@@ -1,0 +1,10 @@
+# aimake meta — 文件指纹（文件名 sha256 前 12 位）
+.aimakeignore 51a0e4acbdb3
+.gitignore 552372d01c65
+AGENTS.md 208b3148d13e
+LICENSE d5479152b306
+README.md e5c9c0f3cb4c
+install.sh 0b0861434416
+main.py ad3ba9a3948c
+plan.md badb8174ee7a
+task.md 2989afb897b4
