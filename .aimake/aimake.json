@@ -1,0 +1,10 @@
+{
+  "engine": {
+    "name": "codex",
+    "prompt_how": "arg",
+    "timeout": 300
+  },
+  "concurrency": 4,
+  "retries": 2,
+  "budget": 20000
+}
