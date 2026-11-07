@@ -1,0 +1,18 @@
+# aimake meta — 文件指纹（文件名 sha256 前 12 位）
+__init__.py 94e3913dedd0
+test_atomic.py 77d1a1256819
+test_cli_how_to_consume.py 0e4fb72237b8
+test_cli_surface.py 9392bddcb060
+test_engine_config.py 86335b997382
+test_exclusion.py e31915f7aee6
+test_experimental_surface.py e0d08bc49ec0
+test_fingerprint.py 57528628d7aa
+test_need_set.py cb417a2abb48
+test_openai_engine.py 59c854efbbf2
+test_prompt_how_to_consume.py f89515759aa6
+test_regression.py 8613b1c7ea38
+test_resume_init.py f6c0134067be
+test_skeleton_meta.py ce2e4b4b38bc
+test_symlink.py 6c6174cc3487
+test_timeout.py c21b4aa554bd
+test_workflow.py 238bc836b7fe
